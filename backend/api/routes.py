@@ -54,7 +54,7 @@ async def warm_tracks_cache(tracks: list):
 @router.get("/search")
 def search(q: str = Query(..., min_length=1), filter: str = "songs"):
     clean_q = q.strip()
-    cache_key = f"search:{clean_q}:{filter}"
+    cache_key = f"search_v2:{clean_q}:{filter}"
     cached_result = get_cache(cache_key)
     if cached_result is not None:
         return cached_result
@@ -79,13 +79,37 @@ def suggestions(q: str):
     return sugs
 
 
+@router.get("/album/{browse_id}")
+async def get_album_endpoint(browse_id: str):
+    cache_key = f"album_v1:{browse_id}"
+    cached = get_cache(cache_key)
+    if cached is not None:
+        return cached
+    data = await run_in_threadpool(yt_service.get_album_details, browse_id)
+    if data and data.get("tracks"):
+        set_cache(cache_key, data, expire_seconds=86400)
+    return data
+
+
+@router.get("/playlist/{browse_id}")
+async def get_playlist_endpoint(browse_id: str):
+    cache_key = f"playlist_v1:{browse_id}"
+    cached = get_cache(cache_key)
+    if cached is not None:
+        return cached
+    data = await run_in_threadpool(yt_service.get_playlist_details, browse_id)
+    if data and data.get("tracks"):
+        set_cache(cache_key, data, expire_seconds=86400)
+    return data
+
+
 # ====================== HOME & CHARTS ======================
 
 @router.get("/home")
 async def get_home(response: Response, background_tasks: BackgroundTasks):
     response.headers["Cache-Control"] = "public, max-age=1800, stale-while-revalidate=3600"
     
-    cache_key = "home_vibe_sections_v2"
+    cache_key = "home_vibe_popular_sections_v7"
     cached_result = get_cache(cache_key)
     if cached_result:
         # Pre-warm top tracks in background if not already pre-warmed
@@ -193,7 +217,7 @@ async def get_song(video_id: str):
             "title": "Music Track",
             "artists": [{"name": "Artist"}],
             "duration": 210,
-            "poster": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+            "poster": f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg"
         }
 
     result = {
@@ -204,7 +228,7 @@ async def get_song(video_id: str):
         "durationFormatted": meta.get("durationFormatted", "3:30"),
         "thumbnails": meta.get("thumbnails", []),
         "poster": meta.get("poster", ""),
-        "fallbackPoster": meta.get("fallbackPoster", f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"),
+        "fallbackPoster": meta.get("fallbackPoster", f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg"),
         "viewCount": meta.get("viewCount", "16,413,738"),
         "description": meta.get("description", "Provided to YouTube by The Orchard Enterprises"),
         "published": meta.get("published", "Jul 2, 2024"),
@@ -239,7 +263,7 @@ async def get_artist(
     background_tasks: BackgroundTasks = None
 ):
     clean_q = artist_query.strip()
-    cache_key = f"artist_profile_v5:{clean_q.lower()}:{browseId or ''}"
+    cache_key = f"artist_profile_v7:{clean_q.lower()}:{browseId or ''}"
     cached_result = get_cache(cache_key)
     if cached_result is not None:
         if background_tasks and cached_result.get("songsBrowseId"):
@@ -248,13 +272,17 @@ async def get_artist(
 
     data = await run_in_threadpool(yt_service.get_artist_profile, clean_q, browseId)
     if data:
+        data["isArtist"] = True
         set_cache(cache_key, data, expire_seconds=86400)
         if data.get("browseId"):
-            set_cache(f"artist_profile_v5:{clean_q.lower()}:{data['browseId']}", data, expire_seconds=86400)
+            set_cache(f"artist_profile_v7:{clean_q.lower()}:{data['browseId']}", data, expire_seconds=86400)
         if background_tasks and data.get("songsBrowseId"):
             background_tasks.add_task(run_in_threadpool, yt_service.preload_artist_songs, data["songsBrowseId"])
         return data
-    return {"name": clean_q, "avatar": "", "subscribers": "", "songs": [], "hasMore": False}
+
+    no_artist = {"name": None, "isArtist": False, "avatar": "", "subscribers": "", "songs": [], "hasMore": False}
+    set_cache(cache_key, no_artist, expire_seconds=3600)
+    return no_artist
 
 
 @router.get("/artist/{artist_query}/more-songs")

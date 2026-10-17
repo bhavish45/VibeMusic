@@ -19,7 +19,7 @@ async def lifespan(app: FastAPI):
             await run_in_threadpool(yt_service.get_shared_ydl)
             
             # Pre-warm home feed cache if needed
-            cache_key = "home_vibe_sections_v2"
+            cache_key = "home_vibe_popular_sections_v7"
             data = get_cache(cache_key)
             if not data:
                 print("[Startup] Pre-warming home feed in background...")

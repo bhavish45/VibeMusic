@@ -4,7 +4,7 @@ import re
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from services.cache_service import get_cache, set_cache
 
 # ====================== INIT ======================
@@ -76,10 +76,15 @@ def _parse_duration(duration_raw: Any, duration_seconds: Optional[int] = None) -
 def _format_poster(raw_url: str, video_id: str = "") -> str:
     """Transforms Google thumbnail url into a crisp high-res 544x544 poster."""
     if not raw_url:
-        return f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg" if video_id else "/placeholder.svg"
+        return f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg" if video_id else "/placeholder.svg"
     
     if "=w" in raw_url or "=s" in raw_url:
         return re.sub(r'=[sw]\d+.*$', '=w544-h544-l90-rj', raw_url)
+    
+    # Eliminate letterbox black bars from YouTube 4:3 hqdefault thumbnails
+    if "i.ytimg.com/vi/" in raw_url and "hqdefault.jpg" in raw_url:
+        return raw_url.replace("hqdefault.jpg", "mqdefault.jpg")
+
     return raw_url
 
 def _format_track(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -123,11 +128,11 @@ def _format_track(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         best_thumb_url = raw_thumbs[-1].get("url", "")
     
     poster = _format_poster(best_thumb_url, video_id)
-    yt_fallback = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+    yt_fallback = f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg"
 
     thumbnails = [
         {"url": poster, "width": 544, "height": 544},
-        {"url": yt_fallback, "width": 480, "height": 360}
+        {"url": yt_fallback, "width": 320, "height": 180}
     ]
     if raw_thumbs and isinstance(raw_thumbs, list):
         for t in raw_thumbs:
@@ -249,17 +254,89 @@ def _format_artist(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     
     raw_thumbs = item.get("thumbnails", [])
     avatar = ""
+    orig_avatar = ""
     if isinstance(raw_thumbs, list) and len(raw_thumbs) > 0:
-        avatar = raw_thumbs[-1].get("url", "")
+        orig_avatar = raw_thumbs[-1].get("url", "")
+        avatar = orig_avatar
         if "=w" in avatar or "=s" in avatar:
-            avatar = re.sub(r'=[sw]\d+.*$', '=w800-h800-l90-rj', avatar)
+            avatar = re.sub(r'=[sw]\d+.*$', '=s544-c-k-c0x00ffffff-no-rj', avatar)
     
     return {
         "type": "artist",
         "name": name,
         "browseId": browse_id,
         "avatar": avatar,
+        "originalAvatar": orig_avatar,
         "subscribers": subscribers,
+        "thumbnails": raw_thumbs
+    }
+
+
+def _format_album(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Formats an album search result item into a clean object."""
+    if not item or not isinstance(item, dict):
+        return None
+    title = item.get("title") or "Unknown Album"
+    browse_id = item.get("browseId") or item.get("playlistId") or ""
+    playlist_id = item.get("playlistId") or ""
+    year = item.get("year") or ""
+    
+    raw_artists = item.get("artists", [])
+    artists = []
+    if isinstance(raw_artists, list):
+        for a in raw_artists:
+            if isinstance(a, dict):
+                artists.append({"name": a.get("name", "Unknown Artist"), "id": a.get("id")})
+            elif isinstance(a, str):
+                artists.append({"name": a})
+    elif isinstance(raw_artists, str):
+        artists.append({"name": raw_artists})
+        
+    artist_name = ", ".join([a["name"] for a in artists]) if artists else "Artist"
+    
+    raw_thumbs = item.get("thumbnails", [])
+    poster = ""
+    if isinstance(raw_thumbs, list) and len(raw_thumbs) > 0:
+        poster = raw_thumbs[-1].get("url", "")
+        if "=w" in poster or "=s" in poster:
+            poster = re.sub(r'=[sw]\d+.*$', '=w544-h544-l90-rj', poster)
+            
+    return {
+        "type": "album",
+        "title": title,
+        "browseId": browse_id,
+        "playlistId": playlist_id,
+        "year": year,
+        "artist": artist_name,
+        "artists": artists,
+        "poster": poster,
+        "thumbnails": raw_thumbs
+    }
+
+
+def _format_playlist(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Formats a playlist search result item into a clean object."""
+    if not item or not isinstance(item, dict):
+        return None
+    title = item.get("title") or "Unknown Playlist"
+    browse_id = item.get("browseId") or ""
+    author = item.get("author") or "Community"
+    item_count = item.get("itemCount") or ""
+    
+    raw_thumbs = item.get("thumbnails", [])
+    poster = ""
+    if isinstance(raw_thumbs, list) and len(raw_thumbs) > 0:
+        poster = raw_thumbs[-1].get("url", "")
+        if "=w" in poster or "=s" in poster:
+            poster = re.sub(r'=[sw]\d+.*$', '=w544-h544-l90-rj', poster)
+            
+    return {
+        "type": "playlist",
+        "title": title,
+        "browseId": browse_id,
+        "author": author,
+        "itemCount": item_count,
+        "poster": poster,
         "thumbnails": raw_thumbs
     }
 
@@ -278,6 +355,14 @@ def search(query: str, filter_type: str = "songs") -> List[Dict[str, Any]]:
             artist_obj = _format_artist(item)
             if artist_obj:
                 formatted.append(artist_obj)
+        elif filter_type == "albums":
+            album_obj = _format_album(item)
+            if album_obj:
+                formatted.append(album_obj)
+        elif filter_type == "playlists":
+            playlist_obj = _format_playlist(item)
+            if playlist_obj:
+                formatted.append(playlist_obj)
         else:
             track = _format_track(item)
             if track:
@@ -285,48 +370,142 @@ def search(query: str, filter_type: str = "songs") -> List[Dict[str, Any]]:
     return formatted
 
 
+def get_album_details(browse_id: str) -> Dict[str, Any]:
+    """Fetches complete album tracks and metadata."""
+    try:
+        alb = yt.get_album(browse_id)
+        if not alb:
+            return {"title": "Album", "tracks": []}
+            
+        album_title = alb.get("title", "Album")
+        album_thumbs = alb.get("thumbnails", [])
+        best_thumb = album_thumbs[-1]["url"] if album_thumbs else ""
+        
+        formatted_tracks = []
+        for t in alb.get("tracks", []):
+            if not t.get("thumbnails") and album_thumbs:
+                t["thumbnails"] = album_thumbs
+            ft = _format_track(t)
+            if ft:
+                formatted_tracks.append(ft)
+                
+        return {
+            "title": album_title,
+            "year": alb.get("year", ""),
+            "artists": alb.get("artists", []),
+            "thumbnails": album_thumbs,
+            "poster": best_thumb,
+            "tracks": formatted_tracks
+        }
+    except Exception as e:
+        print(f"Error fetching album {browse_id}: {e}")
+        return {"title": "Album", "tracks": [], "error": str(e)}
+
+
+def get_playlist_details(browse_id: str) -> Dict[str, Any]:
+    """Fetches complete playlist tracks and metadata."""
+    try:
+        pl = yt.get_playlist(browse_id, limit=100)
+        if not pl:
+            return {"title": "Playlist", "tracks": []}
+            
+        pl_title = pl.get("title", "Playlist")
+        pl_thumbs = pl.get("thumbnails", [])
+        best_thumb = pl_thumbs[-1]["url"] if pl_thumbs else ""
+        
+        formatted_tracks = []
+        for t in pl.get("tracks", []):
+            ft = _format_track(t)
+            if ft:
+                formatted_tracks.append(ft)
+                
+        return {
+            "title": pl_title,
+            "author": pl.get("author", "Community"),
+            "thumbnails": pl_thumbs,
+            "poster": best_thumb,
+            "tracks": formatted_tracks
+        }
+    except Exception as e:
+        print(f"Error fetching playlist {browse_id}: {e}")
+        return {"title": "Playlist", "tracks": [], "error": str(e)}
+
+
+def is_popular_original_track(track: Dict[str, Any]) -> bool:
+    """Strictly filters out unofficial remixes, slowed/reverb, bootlegs, edits, instrumentals and covers."""
+    if not track or not track.get("videoId"):
+        return False
+    title = (track.get("title") or "").lower()
+    
+    raw_artists = track.get("artists", [])
+    artist_names = ""
+    if isinstance(raw_artists, list):
+        artist_names = " ".join([
+            (a.get("name") if isinstance(a, dict) else str(a)).lower()
+            for a in raw_artists
+        ])
+    elif isinstance(raw_artists, str):
+        artist_names = raw_artists.lower()
+
+    bad_keywords = [
+        "remix", "re-mix", "slowed", "reverb", "sped up", "speed up", "speedup",
+        "nightcore", "bass boosted", "instrumental", "karaoke", "cover", "mashup",
+        "bootleg", "8d audio", "tiktok", "ringtone", "status", "chipmunk",
+        "parody", "tribute", "clean version", "acoustic version", "live performance",
+        "radio edit", "phonk remix", "sigma", "loop edit", "fan made", "fan-made",
+        "lofi", "lo-fi", "chill mix", "chillout", "club mix", "extended mix", "dj mix",
+        "dj edit", "dj version", "mix", "remake"
+    ]
+    for kw in bad_keywords:
+        if kw in title:
+            return False
+            
+    if any(k in artist_names for k in ["slowed", "reverb", "nightcore", "bass boost", "tiktok", "bootleg"]):
+        return False
+
+    dur = track.get("duration")
+    if isinstance(dur, (int, float)):
+        if dur < 60 or dur > 660:
+            return False
+            
+    return True
+
+
 def get_home() -> Dict[str, Any]:
     """
-    Fetches home feed with parallel execution: Quick picks + popular curated categories.
+    Fetches home feed with parallel execution: Only genuine popular chart-toppers and official tracks.
     """
     sections: List[Dict[str, Any]] = []
     seen_ids = set()
 
-    # Curated trending category search queries executed in parallel
+    # Curated popular categories ensuring recognizable chart-topping songs
     categories = [
-        ("Top Trending Hits", "Trending Hits 2026"),
-        ("Global Viral Pop", "Viral Pop Hits"),
-        ("Chill & Acoustic", "Chill Acoustic Music"),
-        ("Hip-Hop & R&B", "Top Hip Hop Hits"),
-        ("Bollywood & Regional Hits", "Bollywood Top Songs 2026")
+        ("Today's Biggest Hits", "The Weeknd Bruno Mars Taylor Swift Ed Sheeran top hits"),
+        ("Global Trending Pop", "Billie Eilish Sabrina Carpenter Dua Lipa Ariana Grande top hits"),
+        ("Hip-Hop & R&B Bangers", "Drake Kendrick Lamar Eminem Post Malone top songs"),
+        ("Bollywood Top Hits", "Arijit Singh Shreya Ghoshal Pritam top songs"),
+        ("All-Time Classic Anthems", "Coldplay Imagine Dragons Queen Maroon 5 top songs")
     ]
+
+    category_order = {
+        "Today's Biggest Hits": 0,
+        "Global Trending Pop": 1,
+        "Hip-Hop & R&B Bangers": 2,
+        "Bollywood Top Hits": 3,
+        "All-Time Classic Anthems": 4
+    }
 
     def fetch_cat(item):
         title, q = item
         try:
-            tracks = search(q, filter_type="songs")
-            return title, tracks
+            raw_tracks = search(q, filter_type="songs")
+            clean_tracks = [t for t in raw_tracks if is_popular_original_track(t)]
+            return title, clean_tracks
         except Exception:
             return title, []
 
-    # Also try get_home quick picks
-    def fetch_quick_picks():
-        try:
-            home_data = yt.get_home(limit=3)
-            sec_tracks = []
-            if isinstance(home_data, list):
-                for sec in home_data:
-                    for it in sec.get("contents", []):
-                        trk = _format_track(it)
-                        if trk:
-                            sec_tracks.append(trk)
-            return "Quick Picks For You", sec_tracks
-        except Exception:
-            return "Quick Picks For You", []
-
-    with ThreadPoolExecutor(max_workers=6) as executor:
+    with ThreadPoolExecutor(max_workers=5) as executor:
         futures = [executor.submit(fetch_cat, c) for c in categories]
-        futures.append(executor.submit(fetch_quick_picks))
 
         for future in as_completed(futures):
             try:
@@ -345,8 +524,8 @@ def get_home() -> Dict[str, Any]:
             except Exception as e:
                 print(f"[get_home] Parallel category error: {e}")
 
-    # Ensure consistent order: prioritize Quick Picks or Trending first
-    sections.sort(key=lambda s: 0 if "Trending" in s["title"] else (1 if "Quick" in s["title"] else 2))
+    # Ensure consistent order: popular chart-toppers first
+    sections.sort(key=lambda s: category_order.get(s["title"], 99))
 
     all_tracks = []
     for s in sections:
@@ -428,7 +607,7 @@ def get_song_metadata(video_id: str) -> Dict[str, Any]:
         author = details.get("author", "")
         length_sec = int(details.get("lengthSeconds", 210))
         poster = _format_poster(
-            f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+            f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg",
             video_id
         )
         raw_thumbs = details.get("thumbnail", {}).get("thumbnails", [])
@@ -452,7 +631,7 @@ def get_song_metadata(video_id: str) -> Dict[str, Any]:
             "durationFormatted": f"{length_sec // 60}:{length_sec % 60:02d}",
             "thumbnails": [{"url": poster, "width": 544, "height": 544}],
             "poster": poster,
-            "fallbackPoster": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+            "fallbackPoster": f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg",
             "viewCount": view_count_formatted,
             "description": description_raw,
             "published": "Jul 2, 2024",
@@ -468,9 +647,9 @@ def get_song_metadata(video_id: str) -> Dict[str, Any]:
             "channel": "Music Artist",
             "duration": 210,
             "durationFormatted": "3:30",
-            "thumbnails": [{"url": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg", "width": 480, "height": 360}],
-            "poster": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
-            "fallbackPoster": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+            "thumbnails": [{"url": f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg", "width": 320, "height": 180}],
+            "poster": f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg",
+            "fallbackPoster": f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg",
             "viewCount": "16,413,738",
             "description": "Provided to YouTube by The Orchard Enterprises",
             "published": "Jul 2, 2024",
@@ -583,20 +762,97 @@ def preload_artist_songs(songs_browse_id: str):
         print(f"Preload error for artist songs {songs_browse_id}: {e}")
 
 
+def is_query_for_artist(query: str, browse_id_hint: Optional[str] = None) -> Tuple[bool, Optional[str], Optional[str]]:
+    """
+    Determines if a query is intentionally searching for an artist rather than a song/video.
+    Returns (is_artist, artist_name, browse_id).
+    """
+    if browse_id_hint:
+        return True, None, browse_id_hint
+        
+    raw_q = query.strip()
+    if not raw_q or len(raw_q) < 2:
+        return False, None, None
+        
+    # Check if query is already a channel ID / browseId
+    if (raw_q.startswith("UC") or raw_q.startswith("FEmusic_library_privately_owned_artist")) and len(raw_q) > 15:
+        return True, None, raw_q
+
+    clean_q = re.sub(r'[^a-zA-Z0-9 ]', '', raw_q.lower()).strip()
+    
+    # 1. Unfiltered search: in YouTube Music, searching an artist will return resultType == 'artist' as top item.
+    # When searching for a song (e.g. 'Shape of You', 'Despacito', 'Starboy', 'Yellow'),
+    # the top resultType is 'video' or 'song'.
+    try:
+        unfiltered = yt.search(raw_q)[:3]
+    except Exception:
+        unfiltered = []
+        
+    if unfiltered:
+        top = unfiltered[0]
+        if top.get("resultType") == "artist":
+            top_name = top.get("artist") or (top.get("artists") and top["artists"][0].get("name")) or ""
+            top_bid = top.get("browseId") or (top.get("artists") and top["artists"][0].get("id"))
+            return True, top_name, top_bid
+
+    # 2. Check if the query specifically contains or matches a prominent artist name
+    primary_name = clean_artist_query(raw_q)
+    try:
+        artist_res = yt.search(primary_name or raw_q, filter="artists")[:5]
+    except Exception:
+        artist_res = []
+        
+    for item in artist_res:
+        candidate = (item.get("artist") or item.get("name") or "").strip()
+        clean_candidate = re.sub(r'[^a-zA-Z0-9 ]', '', candidate.lower()).strip()
+        if not clean_candidate:
+            continue
+            
+        # Exact match
+        if clean_q == clean_candidate:
+            if unfiltered and unfiltered[0].get("resultType") in ("song", "video"):
+                song_title = unfiltered[0].get("title") or ""
+                clean_title = re.sub(r'[^a-zA-Z0-9 ]', '', song_title.lower()).strip()
+                if clean_q == clean_title or clean_q in clean_title:
+                    return False, None, None
+            return True, candidate, item.get("browseId")
+            
+        # Clean query contains the full artist name (e.g. 'ed sheeran live' contains 'ed sheeran')
+        if len(clean_candidate) >= 4 and clean_candidate in clean_q:
+            return True, candidate, item.get("browseId")
+            
+        # Full artist name contains clean query if query is significant (e.g. 'arijit' in 'arijit singh', 'weeknd' in 'the weeknd')
+        if len(clean_q) >= 4 and clean_q in clean_candidate:
+            if unfiltered and unfiltered[0].get("resultType") in ("song", "video"):
+                top_song_title = unfiltered[0].get("title") or ""
+                clean_top_title = re.sub(r'[^a-zA-Z0-9 ]', '', top_song_title.lower()).strip()
+                if clean_q in clean_top_title and clean_q not in [re.sub(r'[^a-zA-Z0-9 ]', '', a.get("name","").lower()) for a in unfiltered[0].get("artists", [])]:
+                    return False, None, None
+            return True, candidate, item.get("browseId")
+
+    return False, None, None
+
+
 def get_artist_profile(query: str, browse_id_hint: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
     Fetches full artist details including high-res avatar, subscriber count,
     monthly listeners, view count, bio, albums/singles, initial top songs,
     and songsBrowseId for full discography pagination.
+    Only returns a profile if the query is an artist or browse_id_hint is given.
     """
     if not query:
         return None
     raw_q = query.strip()
     primary_name = clean_artist_query(raw_q)
     
+    # Strictly verify that query is actually searching for an artist
+    is_art, detected_name, detected_bid = is_query_for_artist(raw_q, browse_id_hint)
+    if not is_art:
+        return None
+
     try:
-        browse_id = browse_id_hint
-        artist_name = primary_name or raw_q
+        browse_id = browse_id_hint or detected_bid
+        artist_name = detected_name or primary_name or raw_q
         avatar = ""
         subscribers = ""
         monthly_listeners = ""
@@ -616,32 +872,35 @@ def get_artist_profile(query: str, browse_id_hint: Optional[str] = None) -> Opti
                 browse_id = cached_bid
 
         if not browse_id:
-            # First search with raw query
-            search_res = yt.search(raw_q, filter="artists")
-            # If nothing found or query had multiple artists/suffixes, try cleaned primary artist
+            # Search with primary artist name
+            search_res = yt.search(primary_name, filter="artists")
             if not search_res and primary_name.lower() != raw_q.lower():
-                search_res = yt.search(primary_name, filter="artists")
+                search_res = yt.search(raw_q, filter="artists")
             
             if search_res and len(search_res) > 0:
-                best_match = search_res[0]
+                best_match = None
+                clean_q = re.sub(r'[^a-zA-Z0-9 ]', '', raw_q.lower()).strip()
+                clean_prim = re.sub(r'[^a-zA-Z0-9 ]', '', primary_name.lower()).strip()
                 for item in search_res:
-                    item_art = (item.get("artist") or "").lower()
-                    if item_art == primary_name.lower() or item_art == raw_q.lower():
+                    item_art = (item.get("artist") or item.get("name") or "")
+                    clean_art = re.sub(r'[^a-zA-Z0-9 ]', '', item_art.lower()).strip()
+                    if clean_art == clean_prim or clean_art == clean_q or clean_art in clean_q or clean_q in clean_art:
                         best_match = item
                         break
                 
-                artist_name = best_match.get("artist") or primary_name
-                browse_id = best_match.get("browseId")
-                subscribers = best_match.get("subscribers", "")
-                raw_thumbs = best_match.get("thumbnails", [])
-                if raw_thumbs:
-                    avatar = raw_thumbs[-1].get("url", "")
-                    if "=w" in avatar or "=s" in avatar:
-                        avatar = re.sub(r'=[sw]\d+.*$', '=s800-c-k-c0x00ffffff-no-rj', avatar)
+                if best_match:
+                    artist_name = best_match.get("artist") or primary_name
+                    browse_id = best_match.get("browseId")
+                    subscribers = best_match.get("subscribers", "")
+                    raw_thumbs = best_match.get("thumbnails", [])
+                    if raw_thumbs:
+                        avatar = raw_thumbs[-1].get("url", "")
+                        if "=w" in avatar or "=s" in avatar:
+                            avatar = re.sub(r'=[sw]\d+.*$', '=s800-c-k-c0x00ffffff-no-rj', avatar)
 
-                if browse_id:
-                    set_cache(f"artist_bid:{primary_name.lower()}", browse_id, expire_seconds=604800)
-                    set_cache(f"artist_bid:{artist_name.lower()}", browse_id, expire_seconds=604800)
+                    if browse_id:
+                        set_cache(f"artist_bid:{primary_name.lower()}", browse_id, expire_seconds=604800)
+                        set_cache(f"artist_bid:{artist_name.lower()}", browse_id, expire_seconds=604800)
 
         # If we have a browseId, get deep artist details
         songs = []
@@ -694,6 +953,36 @@ def get_artist_profile(query: str, browse_id_hint: Optional[str] = None) -> Opti
             fallback_songs = search(f"{artist_name}", filter_type="songs")
             songs = fallback_songs[:10]
 
+        # Determine total songs count and pre-populate top songs from full playlist if available
+        total_songs_count = len(songs)
+        if songs_browse_id:
+            cache_key = f"artist_playlist_full:{songs_browse_id}"
+            cached_full = get_cache(cache_key)
+            if cached_full and isinstance(cached_full, list) and len(cached_full) > 0:
+                total_songs_count = len(cached_full)
+                if len(cached_full) > len(songs):
+                    songs = cached_full[:25]
+            else:
+                try:
+                    pl = yt.get_playlist(songs_browse_id, limit=200)
+                    raw_tracks = pl.get("tracks", [])
+                    formatted_full = []
+                    for t in raw_tracks:
+                        ft = _format_track(t)
+                        if ft:
+                            formatted_full.append(ft)
+                    if formatted_full:
+                        set_cache(cache_key, formatted_full, expire_seconds=86400)
+                        total_songs_count = len(formatted_full)
+                        songs = formatted_full[:25]
+                    elif pl.get("trackCount"):
+                        try:
+                            total_songs_count = int(pl.get("trackCount"))
+                        except (ValueError, TypeError):
+                            pass
+                except Exception as e:
+                    print(f"Error loading full artist tracks for {songs_browse_id}: {e}")
+
         # Fallback avatar if still empty
         if not avatar and songs and songs[0].get("poster"):
             avatar = songs[0].get("poster")
@@ -717,7 +1006,8 @@ def get_artist_profile(query: str, browse_id_hint: Optional[str] = None) -> Opti
             "views": views,
             "description": description,
             "songsBrowseId": songs_browse_id,
-            "hasMore": bool(songs_browse_id or len(songs) >= 5),
+            "hasMore": bool(total_songs_count > len(songs)),
+            "totalSongs": total_songs_count,
             "songs": songs,
             "albums": albums
         }
