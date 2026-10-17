@@ -5,6 +5,7 @@ import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, List, Dict, Any
+from services.cache_service import get_cache, set_cache
 
 # ====================== INIT ======================
 yt = YTMusic()
@@ -238,6 +239,31 @@ def get_audio_url(video_id: str) -> str:
 
 # ====================== SEARCH & DISCOVERY ======================
 
+def _format_artist(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Formats an artist search result item into a clean object with high-res avatar."""
+    if not item or not isinstance(item, dict):
+        return None
+    name = item.get("artist") or item.get("name") or "Unknown Artist"
+    browse_id = item.get("browseId")
+    subscribers = item.get("subscribers", "")
+    
+    raw_thumbs = item.get("thumbnails", [])
+    avatar = ""
+    if isinstance(raw_thumbs, list) and len(raw_thumbs) > 0:
+        avatar = raw_thumbs[-1].get("url", "")
+        if "=w" in avatar or "=s" in avatar:
+            avatar = re.sub(r'=[sw]\d+.*$', '=w800-h800-l90-rj', avatar)
+    
+    return {
+        "type": "artist",
+        "name": name,
+        "browseId": browse_id,
+        "avatar": avatar,
+        "subscribers": subscribers,
+        "thumbnails": raw_thumbs
+    }
+
+
 def search(query: str, filter_type: str = "songs") -> List[Dict[str, Any]]:
     """Search YTMusic for songs, videos, albums, or artists."""
     try:
@@ -248,9 +274,14 @@ def search(query: str, filter_type: str = "songs") -> List[Dict[str, Any]]:
     
     formatted = []
     for item in results:
-        track = _format_track(item)
-        if track:
-            formatted.append(track)
+        if filter_type == "artists":
+            artist_obj = _format_artist(item)
+            if artist_obj:
+                formatted.append(artist_obj)
+        else:
+            track = _format_track(item)
+            if track:
+                formatted.append(track)
     return formatted
 
 
@@ -518,3 +549,235 @@ def get_search_suggestions(query: str) -> List[str]:
         return yt.get_search_suggestions(query)
     except Exception:
         return []
+
+
+def clean_artist_query(q: str) -> str:
+    """Strips brackets, featured artist suffixes, topic suffixes, and extra punctuation to isolate primary artist."""
+    if not q:
+        return ""
+    q = re.sub(r'[\(\[\{].*?[\)\]\}]', '', q)
+    q = re.sub(r'-\s*topic\b', '', q, flags=re.IGNORECASE)
+    parts = re.split(r',|&|\bfeat\.?\b|\bft\.?\b|\bwith\b|\bx\b|;|/', q, flags=re.IGNORECASE)
+    primary = parts[0].strip() if parts else q.strip()
+    return primary or q.strip()
+
+
+def preload_artist_songs(songs_browse_id: str):
+    """Pre-caches the full artist top songs playlist in the background for zero-latency clicks."""
+    if not songs_browse_id:
+        return
+    cache_key = f"artist_playlist_full:{songs_browse_id}"
+    if get_cache(cache_key):
+        return
+    try:
+        pl = yt.get_playlist(songs_browse_id, limit=200)
+        raw_tracks = pl.get("tracks", [])
+        tracks = []
+        for t in raw_tracks:
+            ft = _format_track(t)
+            if ft:
+                tracks.append(ft)
+        if tracks:
+            set_cache(cache_key, tracks, expire_seconds=86400)
+    except Exception as e:
+        print(f"Preload error for artist songs {songs_browse_id}: {e}")
+
+
+def get_artist_profile(query: str, browse_id_hint: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """
+    Fetches full artist details including high-res avatar, subscriber count,
+    monthly listeners, view count, bio, albums/singles, initial top songs,
+    and songsBrowseId for full discography pagination.
+    """
+    if not query:
+        return None
+    raw_q = query.strip()
+    primary_name = clean_artist_query(raw_q)
+    
+    try:
+        browse_id = browse_id_hint
+        artist_name = primary_name or raw_q
+        avatar = ""
+        subscribers = ""
+        monthly_listeners = ""
+        views = ""
+        description = ""
+        songs_browse_id = None
+        albums = []
+        
+        # Check if query is already a channel ID / browseId
+        if not browse_id and (raw_q.startswith("UC") or raw_q.startswith("FEmusic_library_privately_owned_artist")) and len(raw_q) > 15:
+            browse_id = raw_q
+
+        # Check if we have cached browse_id for this artist name
+        if not browse_id:
+            cached_bid = get_cache(f"artist_bid:{primary_name.lower()}") or get_cache(f"artist_bid:{raw_q.lower()}")
+            if cached_bid:
+                browse_id = cached_bid
+
+        if not browse_id:
+            # First search with raw query
+            search_res = yt.search(raw_q, filter="artists")
+            # If nothing found or query had multiple artists/suffixes, try cleaned primary artist
+            if not search_res and primary_name.lower() != raw_q.lower():
+                search_res = yt.search(primary_name, filter="artists")
+            
+            if search_res and len(search_res) > 0:
+                best_match = search_res[0]
+                for item in search_res:
+                    item_art = (item.get("artist") or "").lower()
+                    if item_art == primary_name.lower() or item_art == raw_q.lower():
+                        best_match = item
+                        break
+                
+                artist_name = best_match.get("artist") or primary_name
+                browse_id = best_match.get("browseId")
+                subscribers = best_match.get("subscribers", "")
+                raw_thumbs = best_match.get("thumbnails", [])
+                if raw_thumbs:
+                    avatar = raw_thumbs[-1].get("url", "")
+                    if "=w" in avatar or "=s" in avatar:
+                        avatar = re.sub(r'=[sw]\d+.*$', '=s800-c-k-c0x00ffffff-no-rj', avatar)
+
+                if browse_id:
+                    set_cache(f"artist_bid:{primary_name.lower()}", browse_id, expire_seconds=604800)
+                    set_cache(f"artist_bid:{artist_name.lower()}", browse_id, expire_seconds=604800)
+
+        # If we have a browseId, get deep artist details
+        songs = []
+        if browse_id:
+            try:
+                artist_details = yt.get_artist(browse_id)
+                if artist_details:
+                    artist_name = artist_details.get("name") or artist_name
+                    description = artist_details.get("description") or ""
+                    subscribers = artist_details.get("subscribers") or subscribers
+                    monthly_listeners = artist_details.get("monthlyListeners") or ""
+                    views = artist_details.get("views") or ""
+                    
+                    # Use header/avatar from artist details only if search avatar was missing
+                    details_thumbs = artist_details.get("thumbnails", [])
+                    if not avatar and details_thumbs:
+                        avatar = details_thumbs[-1].get("url") or avatar
+                        if "=w" in avatar or "=s" in avatar:
+                            avatar = re.sub(r'=[sw]\d+.*$', '=s800-c-k-c0x00ffffff-no-rj', avatar)
+                    
+                    # Top songs from artist page
+                    songs_section = artist_details.get("songs", {})
+                    if isinstance(songs_section, dict):
+                        songs_browse_id = songs_section.get("browseId")
+                        raw_songs = songs_section.get("results", [])
+                        for s in raw_songs:
+                            t = _format_track(s)
+                            if t:
+                                songs.append(t)
+
+                    # Top albums / singles
+                    raw_albums = (artist_details.get("albums") or {}).get("results", [])
+                    raw_singles = (artist_details.get("singles") or {}).get("results", [])
+                    for alb in (raw_albums + raw_singles)[:10]:
+                        alb_thumbs = alb.get("thumbnails", [])
+                        alb_cover = alb_thumbs[-1].get("url") if alb_thumbs else ""
+                        if "=w" in alb_cover or "=s" in alb_cover:
+                            alb_cover = re.sub(r'=[sw]\d+.*$', '=w544-h544-l90-rj', alb_cover)
+                        albums.append({
+                            "title": alb.get("title", "Album"),
+                            "browseId": alb.get("browseId"),
+                            "year": alb.get("year", ""),
+                            "cover": alb_cover
+                        })
+            except Exception as e:
+                print(f"Error fetching artist browse details for {browse_id}: {e}")
+
+        # If browseId didn't yield songs, fallback to search songs
+        if not songs:
+            fallback_songs = search(f"{artist_name}", filter_type="songs")
+            songs = fallback_songs[:10]
+
+        # Fallback avatar if still empty
+        if not avatar and songs and songs[0].get("poster"):
+            avatar = songs[0].get("poster")
+
+        # Format subscriber text nicely if e.g. "63.5M" -> "63.5M subscribers"
+        formatted_subs = subscribers
+        if formatted_subs and not formatted_subs.lower().endswith("subscribers") and not formatted_subs.lower().endswith("subscribers"):
+            formatted_subs = f"{formatted_subs} subscribers"
+
+        # Format monthly listeners
+        formatted_monthly = monthly_listeners
+        if formatted_monthly and "listener" not in formatted_monthly.lower():
+            formatted_monthly = f"{formatted_monthly} monthly listeners"
+
+        return {
+            "name": artist_name,
+            "browseId": browse_id,
+            "avatar": avatar,
+            "subscribers": formatted_subs or (songs[0].get("subscribers") if songs else ""),
+            "monthlyListeners": formatted_monthly,
+            "views": views,
+            "description": description,
+            "songsBrowseId": songs_browse_id,
+            "hasMore": bool(songs_browse_id or len(songs) >= 5),
+            "songs": songs,
+            "albums": albums
+        }
+    except Exception as e:
+        print(f"Error getting artist profile for '{query}': {e}")
+        return None
+
+
+def get_artist_more_songs(
+    artist_name: str, 
+    songs_browse_id: Optional[str] = None, 
+    offset: int = 0, 
+    limit: int = 50
+) -> Dict[str, Any]:
+    """
+    Fetches full artist discography or paginated batches of songs.
+    Uses cached playlist or songsBrowseId (the top songs playlist ID in ytmusicapi)
+    when available, or falls back to extended search.
+    """
+    tracks: List[Dict[str, Any]] = []
+    
+    if songs_browse_id:
+        cache_key = f"artist_playlist_full:{songs_browse_id}"
+        cached = get_cache(cache_key)
+        if cached and isinstance(cached, list) and len(cached) > 0:
+            tracks = cached
+        else:
+            try:
+                pl = yt.get_playlist(songs_browse_id, limit=200)
+                raw_tracks = pl.get("tracks", [])
+                for t in raw_tracks:
+                    ft = _format_track(t)
+                    if ft:
+                        tracks.append(ft)
+                if tracks:
+                    set_cache(cache_key, tracks, expire_seconds=86400)
+            except Exception as e:
+                print(f"Error loading artist playlist {songs_browse_id}: {e}")
+
+    # Fallback to search if playlist had no tracks
+    if not tracks and artist_name:
+        clean_name = clean_artist_query(artist_name)
+        cache_key = f"artist_search_songs:{clean_name.lower()}"
+        cached_search = get_cache(cache_key)
+        if cached_search and isinstance(cached_search, list):
+            tracks = cached_search
+        else:
+            search_res = search(f"{clean_name} songs", filter_type="songs")
+            tracks = search_res
+            if tracks:
+                set_cache(cache_key, tracks, expire_seconds=86400)
+
+    total_count = len(tracks)
+    batch = tracks[offset : offset + limit] if offset < total_count else []
+    has_more = (offset + len(batch)) < total_count
+
+    return {
+        "tracks": batch,
+        "offset": offset + len(batch),
+        "total": total_count,
+        "hasMore": has_more
+    }
+

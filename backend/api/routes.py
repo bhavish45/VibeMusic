@@ -5,6 +5,7 @@ from services import yt_service
 from services.cache_service import get_cache, set_cache, invalidate_cache
 import httpx
 import asyncio
+from typing import Optional, List, Dict, Any
 
 router = APIRouter()
 
@@ -229,6 +230,57 @@ async def get_lyrics(video_id: str):
     if data:
         set_cache(cache_key, result, expire_seconds=86400)
     return result
+
+
+@router.get("/artist/{artist_query}")
+async def get_artist(
+    artist_query: str, 
+    browseId: Optional[str] = None, 
+    background_tasks: BackgroundTasks = None
+):
+    clean_q = artist_query.strip()
+    cache_key = f"artist_profile_v5:{clean_q.lower()}:{browseId or ''}"
+    cached_result = get_cache(cache_key)
+    if cached_result is not None:
+        if background_tasks and cached_result.get("songsBrowseId"):
+            background_tasks.add_task(run_in_threadpool, yt_service.preload_artist_songs, cached_result["songsBrowseId"])
+        return cached_result
+
+    data = await run_in_threadpool(yt_service.get_artist_profile, clean_q, browseId)
+    if data:
+        set_cache(cache_key, data, expire_seconds=86400)
+        if data.get("browseId"):
+            set_cache(f"artist_profile_v5:{clean_q.lower()}:{data['browseId']}", data, expire_seconds=86400)
+        if background_tasks and data.get("songsBrowseId"):
+            background_tasks.add_task(run_in_threadpool, yt_service.preload_artist_songs, data["songsBrowseId"])
+        return data
+    return {"name": clean_q, "avatar": "", "subscribers": "", "songs": [], "hasMore": False}
+
+
+@router.get("/artist/{artist_query}/more-songs")
+async def get_artist_more_songs_endpoint(
+    artist_query: str, 
+    browseId: Optional[str] = None, 
+    offset: int = 0, 
+    limit: int = 50
+):
+    clean_q = artist_query.strip()
+    cache_key = f"artist_more_songs_v2:{clean_q.lower()}:{browseId or ''}:{offset}:{limit}"
+    cached_result = get_cache(cache_key)
+    if cached_result is not None:
+        return cached_result
+
+    data = await run_in_threadpool(
+        yt_service.get_artist_more_songs, 
+        clean_q, 
+        browseId, 
+        offset, 
+        limit
+    )
+    if data:
+        set_cache(cache_key, data, expire_seconds=86400)
+        return data
+    return {"tracks": [], "offset": offset, "total": 0, "hasMore": False}
 
 
 @router.get("/radio/{video_id}")

@@ -1,0 +1,6 @@
+backend/cache_store/
+backend/cache/
+backend/__pycache__/
+backend/*/__pycache__/
+*.pyc
+.env
