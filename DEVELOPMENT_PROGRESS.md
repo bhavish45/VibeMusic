@@ -1,6 +1,6 @@
 # VibeMusic — Development Progress & Roadmap
 
-> **Date**: October 16, 2026  
+> **Date**: October 17, 2026  
 > **Status**: Operational, Feature-Complete & Fully Verified  
 > **Backend**: FastAPI on `http://localhost:8000` (docs: `http://localhost:8000/docs`)  
 > **Frontend**: Next.js 15 (Turbopack) on `http://localhost:3000`  
@@ -70,6 +70,42 @@
 - Synchronized line highlighting: the active singing line lights up with bold text and automatically smooth-scrolls into view as playback progresses.
 - Interactive seek: clicking any lyric line jumps playback directly to that timestamp.
 - If a song has no lyrics (instrumentals/unlisted), it displays an honest "Lyrics not available for this song" message instead of false text.
+
+---
+
+### F. Global Mini Player Bar Visibility & Multi-Page Persistence
+- **Zero-Bar First Visit**: Mini player bar is completely hidden when a user first visits the application (`currentTrack: null`), ensuring a clean, uncluttered initial landing.
+- **Instant Activation**: As soon as the user plays their first track from any section (carousel, quick picks, search, or artist discography), the player bar slides in smoothly.
+- **Multi-Page Persistence**: Persists across all main routes (`/`, `/search`, `/library`) and floats above modals like `ArtistModal`.
+- **Fullscreen Exclusivity**: Mini player automatically hides whenever the full-screen player (`isExpanded`) or full-screen lyrics (`isFullScreenLyricsOpen`) is opened to eliminate control overlapping.
+
+---
+
+### G. Artist Profile Redirection from Fullscreen Player & Lyrics
+- Fixed full-screen artist link behavior in [ExpandedPlayer.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/ExpandedPlayer.tsx) and [FullScreenLyrics.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/FullScreenLyrics.tsx).
+- Clicking the artist name now closes the full-screen overlay (`setIsExpanded(false)`, `setIsFullScreenLyricsOpen(false)`) and directly opens the target artist's profile in [ArtistModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/ArtistModal.tsx).
+- Resolves the issue where artist profile was rendering beneath the active full-screen player.
+
+---
+
+### H. Autoplay Prevention on First Visit
+- Corrected audio player subscription lifecycle in [audioPlayer.ts](file:///c:/Projects/VibeMusic/frontend/src/lib/audioPlayer.ts).
+- Prevented premature audio element mounting and unwanted playback on initial page loads.
+- Audio playback strictly waits for explicit user action (clicking play on a card, button, or search result).
+
+---
+
+### I. Home Page Top-Left Breathing Gradient Background (`#5AF9DB`)
+- **Aesthetic Black Background**: Set rich, pure black base background (`#000000`) for the home page.
+- **Top-Left Focal Origin Point**: Radial gradient anchored directly at the top-left side of the content area (`md:left-20`).
+- **Color Signature `#5AF9DB`**: High-contrast, vibrant mint-cyan (`rgb(90, 249, 219)`) ambient lighting.
+- **Dual-Layer Breathing Animation**:
+  - `homeBreathingGlow`: Expands and contracts the ambient outer aura (scale 0.92 to 1.35, opacity 0.5 to 0.95, 6.5s ease-in-out loop).
+  - `homeBreathingCore`: Inner luminous core (scale 0.85 to 1.22, opacity 0.65 to 1.0) creating organic, rhythmic breathing depth.
+- **Non-Intrusive & Interactive**: Container uses `pointer-events-none fixed inset-0 md:left-20 z-0` so all clicks, swipes, and scrolls on music cards and filter chips (`relative z-10`) are 100% responsive.
+- **Translucent Header Glassmorphism**: Updated [Header.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/layout/Header.tsx) to `bg-black/40 backdrop-blur-md` so the top-left glow gently illuminates the brand title and greeting.
+- **Route Containment**: Scoped cleanly inside [src/app/page.tsx](file:///c:/Projects/VibeMusic/frontend/src/app/page.tsx); automatically unmounts when navigating to `/search` or `/library`.
+- **Git Checkpoint**: Created rollback checkpoints named `Saturday` in root and frontend repositories.
 
 ---
 
