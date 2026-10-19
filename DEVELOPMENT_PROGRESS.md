@@ -231,6 +231,14 @@ powershell -ExecutionPolicy Bypass -Command "npm run dev"
   - *Direct Queue Track Selection*: Added `playQueueIndex(index)` to `playerStore` for immediate gapless jumping to any upcoming song.
   - *Conditional Contextual 3-Dots Action Menu*: Enhanced `SongActionMenu` to only show "Play Next" and "Add to Queue" when a song is actively playing/loaded. On initial website visits when no music is playing, only "Add to Playlist" and "Add to Favorites" are shown, matching standard music streaming apps.
 
+- **UI & UX Polish (Post-Phase 2.5 Refinements)**:
+  - *Clean Profile Dropdown Menu*: Simplified the user profile menu in [Header.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/layout/Header.tsx) to exclusively show the user avatar, display name, email, and Sign Out button, removing the internal database badge, stats grid, and manual cloud sync button.
+  - *Library Header & Sections Clean-up*: Removed the redundant "NEW" sparkles badge button next to the profile avatar in the Library header, and removed the Spotify Saved Playlists Loaded banner card.
+  - *Simplified Settings Modal*: Streamlined [SettingsModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/SettingsModal.tsx) to 3 focused tabs: **Playback & Audio**, **Lyrics**, and **About**, completely eliminating the Storage & Cache tab, cache item counters, manual cache clearer, and danger zone library reset.
+  - *Dedicated Custom In-App Create Playlist Modal*: Built [CreatePlaylistModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/CreatePlaylistModal.tsx) featuring the exact glassmorphism design, rounded card, and animations of `AddToPlaylistModal.tsx`. Wired both `+ Create Playlist` and empty-state `Create Your First Playlist` buttons to this modal. Stripped out description input so it cleanly requests only the Playlist Name, and fixed the library navigation so newly created playlists instantly appear in the **Your Playlists** grid without empty-state flicker.
+  - *Spotify Playlist Guide Production Polish*: In [page.tsx](file:///c:/Projects/VibeMusic/frontend/src/app/library/page.tsx), updated the title to **"Spotify Playlist"**, removed developer jargon ("Zero Spotify API Keys Required", "embed parsing", "developer accounts"), cleanly aligned the `(n) imported` badge horizontally and vertically beside the title, and replaced technical notes with user-friendly copy for production deployment.
+  - *Guest Library Banner Update*: Changed the top guest banner title across all library views from "Save Favorites & Cloud Library" to **"Sign In"** and removed the blue "Email Account" badge.
+
 ---
 
 ## 4. Suggested Next Steps for Tomorrow
