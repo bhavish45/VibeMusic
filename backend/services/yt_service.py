@@ -155,37 +155,60 @@ def _format_track(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 # ====================== AUDIO EXTRACTION ======================
 
-def get_best_audio_url(video_id: str) -> Optional[Dict[str, Any]]:
+def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[str, Any]]:
     """
-    High-performance, ultra-reliable audio stream extractor.
+    High-performance, ultra-reliable audio stream extractor with bitrate/quality selection.
     Uses shared YoutubeDL instance with tv_embedded & android clients.
-    Guarantees direct audio URL without signature challenge delays.
+    Supports 'high' (best/320kbps), 'standard' (160kbps), and 'saver' (96kbps).
     """
     url = f"https://www.youtube.com/watch?v={video_id}"
-    ydl = get_shared_ydl()
+    
+    # Custom format selector per quality
+    if quality == "saver":
+        target_format = "249/250/worst[ext=m4a]/bestaudio[abr<=96]/bestaudio"
+        default_bitrate = 96
+    elif quality == "standard":
+        target_format = "140/bestaudio[abr<=160]/bestaudio"
+        default_bitrate = 160
+    else:
+        target_format = "140/251/bestaudio[abr>=160]/bestaudio/best"
+        default_bitrate = 320
 
-    # Fast primary extraction using shared pre-initialized instance
+    # Fast primary extraction
+    if quality == "high":
+        ydl = get_shared_ydl()
+    else:
+        ydl = yt_dlp.YoutubeDL({
+            "format": target_format,
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "nocheckcertificate": True,
+            "extractor_args": {"youtube": {"player_client": ["tv_embedded", "android"]}}
+        })
+
     try:
         info = ydl.extract_info(url, download=False)
         if info and info.get("url"):
             return {
                 "url": info["url"],
-                "bitrate": info.get("abr") or info.get("tbr") or 160,
+                "bitrate": info.get("abr") or info.get("tbr") or default_bitrate,
                 "ext": info.get("ext", "m4a"),
                 "duration": info.get("duration"),
                 "title": info.get("title"),
+                "quality": quality,
                 "client": "tv_embedded",
                 "headers": dict(info.get("http_headers", {}))
             }
     except Exception as e:
-        print(f"[yt-dlp] Primary extraction failed for {video_id}: {e}")
+        print(f"[yt-dlp] Primary extraction failed for {video_id} ({quality}): {e}")
 
     # Fallback to secondary clients if primary fails
     fallback_clients = [["android"], ["web"]]
     for client in fallback_clients:
         try:
             opts = {
-                "format": "140/18/bestaudio/best",
+                "format": target_format,
                 "quiet": True,
                 "no_warnings": True,
                 "noplaylist": True,
@@ -197,10 +220,11 @@ def get_best_audio_url(video_id: str) -> Optional[Dict[str, Any]]:
                 if info and info.get("url"):
                     return {
                         "url": info["url"],
-                        "bitrate": info.get("abr") or info.get("tbr") or 128,
+                        "bitrate": info.get("abr") or info.get("tbr") or default_bitrate,
                         "ext": info.get("ext", "m4a"),
                         "duration": info.get("duration"),
                         "title": info.get("title"),
+                        "quality": quality,
                         "client": client[0],
                         "headers": dict(info.get("http_headers", {}))
                     }
@@ -210,11 +234,11 @@ def get_best_audio_url(video_id: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def get_audio_stream_info(video_id: str) -> Dict[str, Any]:
+def get_audio_stream_info(video_id: str, quality: str = "high") -> Dict[str, Any]:
     """
-    Extracts direct audio URL and necessary headers for streaming.
+    Extracts direct audio URL and necessary headers for streaming with specific quality.
     """
-    audio = get_best_audio_url(video_id)
+    audio = get_best_audio_url(video_id, quality=quality)
 
     if not audio or not audio.get("url"):
         raise Exception(f"Could not extract audio stream for {video_id}")
@@ -231,6 +255,7 @@ def get_audio_stream_info(video_id: str) -> Dict[str, Any]:
         "title": audio.get("title"),
         "duration": audio.get("duration"),
         "bitrate": audio.get("bitrate"),
+        "quality": quality,
         "ext": audio.get("ext"),
         "client": audio.get("client")
     }

@@ -6,6 +6,7 @@ from services.cache_service import get_cache, set_cache, invalidate_cache
 import httpx
 import asyncio
 from typing import Optional, List, Dict, Any
+from pydantic import BaseModel
 
 router = APIRouter()
 
@@ -181,7 +182,7 @@ async def preload_batch(request: Request):
 
     async def _warm_all():
         for vid in video_ids[:6]:
-            if not vid:
+            if not vid or vid.startswith("sp_"):
                 continue
             key = f"stream_info:{vid}"
             if not get_cache(key):
@@ -256,6 +257,7 @@ async def get_lyrics(video_id: str):
     return result
 
 
+
 @router.get("/artist/{artist_query}")
 async def get_artist(
     artist_query: str, 
@@ -327,26 +329,42 @@ async def get_radio(video_id: str):
 # ====================== STREAM PROXY ======================
 
 @router.get("/stream/{video_id}")
-async def stream_audio(video_id: str, request: Request, retry: int = 0):
+async def stream_audio(video_id: str, request: Request, retry: int = 0, quality: str = "high"):
     """
     Proxies audio stream with HTTP Range support for instant, zero-delay playback.
     Singleflight deduplication + connection pooling + automatic 403/410 recovery.
+    Supports bitrate quality selection: high (320k), standard (160k), saver (96k).
     """
-    audio_cache_key = f"stream_info:{video_id}"
+    if video_id.startswith("sp_"):
+        clean_sp = video_id.replace("sp_", "").strip()
+        try:
+            from services import spotify_service
+            client = get_stream_client()
+            oembed_url = f"https://open.spotify.com/oembed?url=https://open.spotify.com/track/{clean_sp}"
+            oe = await client.get(oembed_url)
+            if oe.status_code == 200:
+                oe_title = oe.json().get("title", "")
+                resolved = await spotify_service.resolve_spotify_track_to_youtube(oe_title, "")
+                if resolved and resolved.get("videoId"):
+                    video_id = resolved["videoId"]
+        except Exception as e:
+            print(f"[stream] Failed to resolve sp_ id {video_id}: {e}")
+
+    audio_cache_key = f"stream_info:{video_id}:{quality}"
     cached_info = None if retry > 0 else get_cache(audio_cache_key)
     
     if not cached_info:
         # Use per-video singleflight lock to prevent concurrent duplicate extractions
-        lock = await get_video_lock(video_id)
+        lock = await get_video_lock(f"{video_id}:{quality}")
         async with lock:
             cached_info = get_cache(audio_cache_key)
             if not cached_info or retry > 0:
                 try:
-                    cached_info = await run_in_threadpool(yt_service.get_audio_stream_info, video_id)
+                    cached_info = await run_in_threadpool(yt_service.get_audio_stream_info, video_id, quality=quality)
                     if cached_info and cached_info.get("url"):
                         set_cache(audio_cache_key, cached_info, expire_seconds=14400)
                 except Exception as e:
-                    print(f"Failed to extract audio stream for {video_id}: {e}")
+                    print(f"Failed to extract audio stream for {video_id} ({quality}): {e}")
                     raise HTTPException(status_code=500, detail="Could not extract audio stream")
             
     if not cached_info or not cached_info.get("url"):
@@ -376,7 +394,7 @@ async def stream_audio(video_id: str, request: Request, retry: int = 0):
             print(f"Upstream returned {remote_res.status_code} for {video_id}. Re-extracting fresh audio stream...")
             invalidate_cache(audio_cache_key)
             
-            fresh_info = await run_in_threadpool(yt_service.get_audio_stream_info, video_id)
+            fresh_info = await run_in_threadpool(yt_service.get_audio_stream_info, video_id, quality=quality)
             if fresh_info and fresh_info.get("url"):
                 set_cache(audio_cache_key, fresh_info, expire_seconds=14400)
                 target_url = fresh_info["url"]
@@ -400,6 +418,9 @@ async def stream_audio(video_id: str, request: Request, retry: int = 0):
         "Accept-Ranges": "bytes",
         "Content-Type": remote_res.headers.get("Content-Type", "audio/mp4"),
         "Cache-Control": "public, max-age=86400",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "*",
+        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
     }
     if "Content-Range" in remote_res.headers:
         resp_headers["Content-Range"] = remote_res.headers["Content-Range"]

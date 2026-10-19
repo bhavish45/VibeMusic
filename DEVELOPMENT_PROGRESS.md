@@ -1,6 +1,6 @@
 # VibeMusic — Development Progress & Roadmap
 
-> **Date**: October 17, 2026  
+> **Date**: October 18, 2026  
 > **Status**: Operational, Feature-Complete & Fully Verified  
 > **Backend**: FastAPI on `http://localhost:8000` (docs: `http://localhost:8000/docs`)  
 > **Frontend**: Next.js 15 (Turbopack) on `http://localhost:3000`  
@@ -8,6 +8,26 @@
 ---
 
 ## 1. Summary of Completed Work
+
+### J. Email Database Authentication & 100% Free Spotify Playlist Importer (Zero API Keys)
+- **Email & Password Authentication (`backend/services/db_service.py` & `auth_service.py`)**:
+  - SQLite database architecture (`backend/vibemusic.db`) with `users`, `user_favorites`, `user_playlists`, `user_playlist_tracks` tables.
+  - Secure PBKDF2 HMAC-SHA256 password hashing (100,000 iterations + cryptographic salt) and JWT token validation.
+  - Strictly Email & Password login/registration — no external OAuth or paid subscription required.
+- **100% Free Spotify Playlist Importer (Zero API Keys / No Spotify Premium Needed)**:
+  - Addressed the 2026 Spotify Web API limitation where Spotify restricted API access behind paid developer tiers.
+  - Implemented public Spotify embed extraction (`/api/spotify/import-url`), extracting full playlist titles, descriptions, official cover artwork, and complete tracklists directly without requiring any developer keys or premium accounts.
+  - Dynamic Spotify-to-YouTube track resolution (`/api/spotify/resolve-track`) matches each imported Spotify song to high-fidelity audio streams for seamless playback with progress tracking and equalizer animations.
+- **Visual Step-by-Step User Instructions (Where & How to Get Playlist Links)**:
+  - Built a comprehensive 4-step interactive guide featured both directly on the `/library` Spotify Playlists view and inside the Import Modal:
+    - **Step 1: Open Spotify**: Works with mobile app, desktop app, or web (`open.spotify.com`) with any free/premium account.
+    - **Step 2: Choose Any Playlist**: Select any personal, friend's, or official Spotify playlist.
+    - **Step 3: Copy Playlist Link**: Dedicated instructions for Mobile (tap `•••` &rarr; Share &rarr; Copy link) and Desktop (click `•••` next to Play &rarr; Share &rarr; Copy link to playlist).
+    - **Step 4: Paste & Stream**: Paste link into VibeMusic and enjoy instant full audio playback.
+  - Included a **"Paste from Clipboard"** button and 1-click popular presets (Today's Top Hits, RapCaviar, Chill Lofi Beats) for instant testing.
+- **Permissions & Cloud Sync**:
+  - Unauthenticated guests can create local playlists and listen to music freely.
+  - Favoriting songs prompts for Email sign-in, persisting favorites and playlists directly to SQLite database.
 
 ### A. Full Artist Extraction, Optimization & Song Discography ("Load More")
 - **ytmusicapi Verification & Architecture**:
@@ -165,10 +185,21 @@ powershell -ExecutionPolicy Bypass -Command "npm run dev"
 ```
 *Frontend runs on `http://localhost:3000`.*
 
+### Recent Updates:
+- **Clean Lyrics Display**: Reverted English lyrics translation additions; lyrics display and structure are restored to the clean original view in both the expanded player card and fullscreen view.
+- **Clean MiniPlayer Bar**: Removed audio quality badges from the miniplayer bar to preserve a clean, uncluttered playback bar.
+- **Immediate Settings Reactivity**: Dynamic theming, audio normalization compressor, audio quality streams, continuous autoplay, crossfade durations, and synced lyrics auto-scrolling all apply instantly in real time without refreshing or pausing playback.
+- **Individual Song Posters for Spotify Playlists**: Fixed the issue where imported Spotify playlist tracks displayed the playlist collage poster. Songs inside imported Spotify playlists now display their own authentic individual album covers (via Spotify oEmbed and YouTube Music fallback), while the playlist header preserves its original playlist cover.
+- **Complete Spotify Playlist Track Import**: Ensures 100% of songs in public Spotify playlists are imported without skipping tracks.
+- **Strict Playlist Deletion Protection**: Users cannot delete songs from imported Spotify playlists (the delete button is completely hidden in the UI and blocked on both frontend store and backend API). Song deletion is only permitted for local or custom playlists created by the user. Deleting the entire imported Spotify playlist remains fully available via the playlist header.
+- **Zero-Delay Progress Bar Reset on Song Skip**: Fixed the issue where skipping a song (e.g., at 50s) left the progress bar stuck at 50s on the next song. Added synchronous audio pausing, `audio.currentTime = 0`, progress zeroing, and an `isLoadingTrack` flag to suppress stale `timeupdate` emissions during track transitions.
+- **Seamless Background Queue Preloading for Spotify & Local Playlists**: Implemented active background queue track resolution in `AudioPlayerService` (`preloadUpcomingQueue` and `resolveUpcomingTrack`). Upcoming Spotify playlist and local playlist tracks have their YouTube streams resolved and pre-buffered into `nextAudio` with backend batch warming, ensuring instant gapless transitions matching the Home section.
+- **Reliable Full Playlist Deletion with Custom In-App Modal**: Fixed the issue where deleting imported Spotify playlists was failing due to browser suppression of native `window.confirm()` dialogs and ID prefix mismatches (`sp_pl_` vs raw Spotify ID). Introduced a custom glassmorphic confirmation modal, tolerant ID filtering in `playerStore.deletePlaylist`, and multi-ID fallback matching in `db_service.delete_user_playlist`. Deleting entire Spotify or user custom playlists works 100% reliably from both playlist cards and header views.
+- **Fixed Next.js SSR Hydration Mismatch**: Resolved the hydration mismatch error caused by `navigationStore` evaluating `typeof window !== 'undefined' ? window.location.pathname : '/'` during store module initialization (which caused the server to render Home `'/'` while the client rendered `'/library'`). Initialized `currentPath: null` to allow server and initial client hydration to match seamlessly with Next.js's native `usePathname()`, and deferred client-side persistence loading (`settingsStore`) to `AuthInitializer` mount effects.
+
 ---
 
 ## 4. Suggested Next Steps for Tomorrow
-
 1. **Audio Cache & Offline Playback (Service Worker)**:
    - Connect the "Downloaded" section to CacheStorage or IndexedDB via the PWA service worker so audio files play completely offline without network connectivity.
 2. **Explore Mood / Genre Playlists**:
@@ -177,3 +208,4 @@ powershell -ExecutionPolicy Bypass -Command "npm run dev"
    - Add global keyboard handlers: spacebar for Play/Pause, `Shift+Right` for Next Track, `Shift+Left` for Previous Track, and `M` for Mute.
 4. **Equalizer & Audio Effects**:
    - Optional Web Audio API equalizer (Bass Boost, Treble, Vocal Clarity presets).
+

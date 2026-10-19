@@ -5,14 +5,17 @@ import os
 import asyncio
 from dotenv import load_dotenv
 from starlette.concurrency import run_in_threadpool
-from services import yt_service
+from services import yt_service, db_service
 from services.cache_service import get_cache, set_cache
-from api import routes
+from api import routes, auth_routes
 
 load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Initialize SQLite database schema
+    db_service.init_db()
+
     async def _startup_warm():
         try:
             # Pre-initialize shared YoutubeDL
@@ -66,6 +69,9 @@ app.add_middleware(
     expose_headers=["Content-Range", "Accept-Ranges", "Content-Length"],
 )
 
+app.include_router(auth_routes.auth_router, prefix="/api")
+app.include_router(auth_routes.user_router, prefix="/api")
+app.include_router(auth_routes.spotify_router, prefix="/api")
 app.include_router(routes.router, prefix="/api")
 
 @app.get("/")
