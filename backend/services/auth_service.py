@@ -62,6 +62,30 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, A
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required. Please sign in to perform this action."
         )
+
+    # 1. Check if Supabase client is configured and can verify this token
+    from services import supabase_service
+    if supabase_service.is_supabase_configured():
+        client = supabase_service.get_supabase_client()
+        if client:
+            try:
+                res = client.auth.get_user(token)
+                if res and res.user:
+                    su_user = res.user
+                    meta = su_user.user_metadata or {}
+                    return {
+                        "id": su_user.id,
+                        "email": su_user.email,
+                        "display_name": meta.get("displayName") or meta.get("full_name") or (su_user.email.split("@")[0] if su_user.email else "User"),
+                        "avatar_url": meta.get("avatar_url"),
+                        "provider": "email",
+                        "created_at": int(time.time()),
+                        "token": token
+                    }
+            except Exception:
+                pass
+
+    # 2. Local JWT token verification
     payload = decode_access_token(token)
     if not payload or not payload.get("sub"):
         raise HTTPException(
@@ -74,13 +98,43 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, A
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User account not found."
         )
-    return user
+    user_dict = dict(user)
+    user_dict["token"] = token
+    return user_dict
 
 def get_optional_current_user(authorization: Optional[str] = Header(None)) -> Optional[Dict[str, Any]]:
     token = extract_token_from_header(authorization)
     if not token:
         return None
+
+    from services import supabase_service
+    if supabase_service.is_supabase_configured():
+        client = supabase_service.get_supabase_client(token)
+        if client:
+            try:
+                res = client.auth.get_user(token)
+                if res and res.user:
+                    su_user = res.user
+                    meta = su_user.user_metadata or {}
+                    return {
+                        "id": su_user.id,
+                        "email": su_user.email,
+                        "display_name": meta.get("displayName") or meta.get("full_name") or (su_user.email.split("@")[0] if su_user.email else "User"),
+                        "avatar_url": meta.get("avatar_url"),
+                        "provider": "email",
+                        "created_at": int(time.time()),
+                        "token": token
+                    }
+            except Exception:
+                pass
+
     payload = decode_access_token(token)
     if not payload or not payload.get("sub"):
         return None
-    return db_service.get_user_by_id(payload["sub"])
+    user = db_service.get_user_by_id(payload["sub"])
+    if user:
+        user_dict = dict(user)
+        user_dict["token"] = token
+        return user_dict
+    return None
+

@@ -1,15 +1,15 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import os
 import asyncio
-from dotenv import load_dotenv
 from starlette.concurrency import run_in_threadpool
 from services import yt_service, db_service
 from services.cache_service import get_cache, set_cache
 from api import routes, auth_routes
-
-load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

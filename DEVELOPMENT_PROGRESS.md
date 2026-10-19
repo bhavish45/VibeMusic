@@ -9,6 +9,25 @@
 
 ## 1. Summary of Completed Work
 
+### K. Supabase Cloud Database & User Storage Architecture (Phase 2 Completed)
+- **Supabase Cloud PostgreSQL & Authentication (`supabase_schema.sql` & `supabase_service.py`)**:
+  - Connected app to live Supabase Cloud PostgreSQL database (`https://qktvfmsldtfprdladojk.supabase.co`).
+  - Implemented dual-mode authentication: seamless Supabase Auth (`@supabase/supabase-js`) with automatic fallback to local SQLite when keys are missing.
+  - Configured Row Level Security (RLS) policies for user data isolation, supporting both User Bearer Token scoping and Backend Service Role Admin execution.
+  - Auto-trigger on `auth.users` creates and manages `public.profiles`.
+- **User Storage Split Architecture (100% Compliant with Specifications)**:
+  - **Favorites (`user_favorites`)**: Saved directly to Supabase Cloud PostgreSQL; synchronized on sign-in and instantly updated when songs are liked/unliked.
+  - **Custom Playlists (`user_playlists` & `user_playlist_tracks`)**: User-created playlists and their individual songs are stored in Supabase with position indexing. Deleting a song via the UI removes the specific entry from `user_playlist_tracks`. Deleting a playlist cascades and cleans up all associated tracks.
+  - **Lightweight Spotify Playlists (0 Tracks in Database)**:
+    - Spotify playlists are stored as lightweight headers (`source='spotify'`, `spotify_playlist_id`, name, cover).
+    - Individual tracks are **NOT** stored in the database, saving massive database storage and preventing row bloat.
+    - When opened in Library, tracks and artwork are loaded dynamically on-demand directly via public Spotify link.
+    - Tracks remain cached in frontend state during session to prevent any disappearing or re-fetching lag.
+  - **Followed Artists (`user_followed_artists`)**: Backed up to Supabase Cloud; persists followed artist names, avatars, YouTube browse IDs, and subscriber counts.
+  - **Recently Played Songs (`localStorage`)**: Maintained on device for instant playback speed, privacy, and offline accessibility.
+  - **Most Played Songs (`localStorage`)**: Calculated dynamically on device from local play history counters.
+  - **Settings & Audio Preferences (`localStorage`)**: Preserved in local storage (equalizer, volume, streaming quality, visuals).
+
 ### J. Email Database Authentication & 100% Free Spotify Playlist Importer (Zero API Keys)
 - **Email & Password Authentication (`backend/services/db_service.py` & `auth_service.py`)**:
   - SQLite database architecture (`backend/vibemusic.db`) with `users`, `user_favorites`, `user_playlists`, `user_playlist_tracks` tables.
@@ -196,6 +215,21 @@ powershell -ExecutionPolicy Bypass -Command "npm run dev"
 - **Seamless Background Queue Preloading for Spotify & Local Playlists**: Implemented active background queue track resolution in `AudioPlayerService` (`preloadUpcomingQueue` and `resolveUpcomingTrack`). Upcoming Spotify playlist and local playlist tracks have their YouTube streams resolved and pre-buffered into `nextAudio` with backend batch warming, ensuring instant gapless transitions matching the Home section.
 - **Reliable Full Playlist Deletion with Custom In-App Modal**: Fixed the issue where deleting imported Spotify playlists was failing due to browser suppression of native `window.confirm()` dialogs and ID prefix mismatches (`sp_pl_` vs raw Spotify ID). Introduced a custom glassmorphic confirmation modal, tolerant ID filtering in `playerStore.deletePlaylist`, and multi-ID fallback matching in `db_service.delete_user_playlist`. Deleting entire Spotify or user custom playlists works 100% reliably from both playlist cards and header views.
 - **Fixed Next.js SSR Hydration Mismatch**: Resolved the hydration mismatch error caused by `navigationStore` evaluating `typeof window !== 'undefined' ? window.location.pathname : '/'` during store module initialization (which caused the server to render Home `'/'` while the client rendered `'/library'`). Initialized `currentPath: null` to allow server and initial client hydration to match seamlessly with Next.js's native `usePathname()`, and deferred client-side persistence loading (`settingsStore`) to `AuthInitializer` mount effects.
+- **Git Checkpoint: Phase 2**: Created rollback checkpoint tagged `phase-2` across root (`9762c3c`) and frontend (`3767ece`) git repositories before implementing working email login.
+- **100% Working Email Login & Registration**:
+  - *Fixed AuthModal Render-Loop Tab Bug*: Resolved an issue in [AuthModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/AuthModal.tsx) where checking `mode !== authModalMode` directly inside the render body continuously reverted the tab back to login, preventing users from switching to "Create Account". Moved mode initialization cleanly to `useEffect`.
+  - *Instant 1-Click Demo & Pre-Fill*: Configured existing `test@example.com` demo credentials (`password123`) and added both a **"Fill demo account"** link and an **"Instant Demo Sign In (1-Click)"** button for testing, alongside standard email/password entry.
+  - *Complete User Library Synchronization*: Fully implemented [fetchUserLibrary](file:///c:/Projects/VibeMusic/frontend/src/store/playerStore.ts) and [handleUserLogout](file:///c:/Projects/VibeMusic/frontend/src/store/playerStore.ts). When a user logs in, their cloud favorites and playlists are retrieved from SQLite via `/api/user/library` and synced to the local store and storage.
+  - *Robust Backend URL Resolution*: Added [getBackendUrl()](file:///c:/Projects/VibeMusic/frontend/src/store/authStore.ts) to gracefully route requests to `127.0.0.1:8000` or `localhost:8000`, resolving IPv6/IPv4 connection drops on Windows.
+  - *Global Search Page Header Pill*: Added a direct Sign In / User Profile button next to the search input on [/search](file:///c:/Projects/VibeMusic/frontend/src/app/search/page.tsx) so users can check account status or sign in without navigating away from Search.
+  - *End-to-End Browser Verified*: Verified with browser automation that user sign-out, demo email login, profile dropdown view, tab switching, and new user account creation ("Alex Rivera" &rarr; `alex.test@vibemusic.app`) succeed 100% with immediate reactive feedback.
+
+- **Git Checkpoint: Phase 2.5**:
+  - *Full Supabase Cloud Storage Split*: Implemented real database tables for user favorites, custom playlists with cascading track deletion, lightweight Spotify playlist references without track bloat, followed artists, and client localStorage for recent plays, most played, and audio settings.
+  - *Read-Only Playback Queue*: Removed all delete buttons (`Trash2`) on queue items and the `Clear` button in the drawer header so users cannot delete songs from the queue.
+  - *Fixed Finished Song Re-appearing in Up Next*: Fixed `QueueDrawer` so "Up Next" is strictly sliced from `queueIndex + 1`. Songs that have completed playback stay in playback history and never re-appear under "Up Next".
+  - *Direct Queue Track Selection*: Added `playQueueIndex(index)` to `playerStore` for immediate gapless jumping to any upcoming song.
+  - *Conditional Contextual 3-Dots Action Menu*: Enhanced `SongActionMenu` to only show "Play Next" and "Add to Queue" when a song is actively playing/loaded. On initial website visits when no music is playing, only "Add to Playlist" and "Add to Favorites" are shown, matching standard music streaming apps.
 
 ---
 

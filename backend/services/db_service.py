@@ -4,6 +4,7 @@ import os
 import time
 import uuid
 from typing import Optional, List, Dict, Any
+from services import supabase_service
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "vibemusic.db")
 
@@ -73,6 +74,20 @@ def init_db():
             );
 
             CREATE INDEX IF NOT EXISTS idx_playlist_tracks ON user_playlist_tracks(playlist_id, position);
+
+            CREATE TABLE IF NOT EXISTS user_followed_artists (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                artist_name TEXT NOT NULL,
+                artist_browse_id TEXT,
+                avatar_url TEXT,
+                subscribers TEXT,
+                created_at INTEGER NOT NULL,
+                UNIQUE(user_id, artist_name),
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_followed_artists_user ON user_followed_artists(user_id);
             """)
         print("[DB] SQLite database initialized successfully at", DB_PATH)
     finally:
@@ -189,7 +204,9 @@ def update_user_spotify_info(
 
 # ----------------- FAVORITES OPERATIONS -----------------
 
-def get_user_favorites(user_id: str) -> List[Dict[str, Any]]:
+def get_user_favorites(user_id: str, user_token: Optional[str] = None) -> List[Dict[str, Any]]:
+    if supabase_service.is_supabase_configured():
+        return supabase_service.get_user_favorites(user_id, user_token=user_token)
     conn = get_db_connection()
     try:
         rows = conn.execute(
@@ -206,7 +223,9 @@ def get_user_favorites(user_id: str) -> List[Dict[str, Any]]:
     finally:
         conn.close()
 
-def add_user_favorite(user_id: str, track: Dict[str, Any]) -> bool:
+def add_user_favorite(user_id: str, track: Dict[str, Any], user_token: Optional[str] = None) -> bool:
+    if supabase_service.is_supabase_configured():
+        return supabase_service.add_user_favorite(user_id, track, user_token=user_token)
     video_id = track.get("videoId")
     if not video_id:
         return False
@@ -225,7 +244,9 @@ def add_user_favorite(user_id: str, track: Dict[str, Any]) -> bool:
     finally:
         conn.close()
 
-def remove_user_favorite(user_id: str, video_id: str) -> bool:
+def remove_user_favorite(user_id: str, video_id: str, user_token: Optional[str] = None) -> bool:
+    if supabase_service.is_supabase_configured():
+        return supabase_service.remove_user_favorite(user_id, video_id, user_token=user_token)
     conn = get_db_connection()
     try:
         with conn:
@@ -248,9 +269,78 @@ def is_user_favorite(user_id: str, video_id: str) -> bool:
     finally:
         conn.close()
 
+# ----------------- FOLLOWED ARTISTS OPERATIONS -----------------
+
+def get_user_followed_artists(user_id: str, user_token: Optional[str] = None) -> List[Dict[str, Any]]:
+    if supabase_service.is_supabase_configured():
+        return supabase_service.get_user_followed_artists(user_id, user_token=user_token)
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT artist_name as name, artist_browse_id as id, avatar_url as avatar, subscribers
+            FROM user_followed_artists
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            """,
+            (user_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+def add_user_followed_artist(user_id: str, artist: Dict[str, Any], user_token: Optional[str] = None) -> bool:
+    if supabase_service.is_supabase_configured():
+        return supabase_service.add_user_followed_artist(user_id, artist, user_token=user_token)
+    artist_name = (artist.get("name") or "").strip()
+    if not artist_name:
+        return False
+    now = int(time.time())
+    conn = get_db_connection()
+    try:
+        with conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO user_followed_artists (
+                    user_id, artist_name, artist_browse_id, avatar_url, subscribers, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (user_id, artist_name, artist.get("id"), artist.get("avatar"), artist.get("subscribers"), now)
+            )
+        return True
+    finally:
+        conn.close()
+
+def remove_user_followed_artist(user_id: str, artist_name: str, user_token: Optional[str] = None) -> bool:
+    if supabase_service.is_supabase_configured():
+        return supabase_service.remove_user_followed_artist(user_id, artist_name, user_token=user_token)
+    conn = get_db_connection()
+    try:
+        with conn:
+            conn.execute(
+                "DELETE FROM user_followed_artists WHERE user_id = ? AND LOWER(artist_name) = LOWER(?)",
+                (user_id, artist_name.strip())
+            )
+        return True
+    finally:
+        conn.close()
+
+def is_user_following_artist(user_id: str, artist_name: str) -> bool:
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM user_followed_artists WHERE user_id = ? AND LOWER(artist_name) = LOWER(?)",
+            (user_id, artist_name.strip())
+        ).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
 # ----------------- PLAYLIST OPERATIONS -----------------
 
-def get_user_playlists(user_id: str) -> List[Dict[str, Any]]:
+def get_user_playlists(user_id: str, user_token: Optional[str] = None) -> List[Dict[str, Any]]:
+    if supabase_service.is_supabase_configured():
+        return supabase_service.get_user_playlists(user_id, user_token=user_token)
     conn = get_db_connection()
     try:
         rows = conn.execute(
@@ -292,9 +382,24 @@ def create_user_playlist(
     cover_url: Optional[str] = None,
     source: str = "custom",
     spotify_playlist_id: Optional[str] = None,
-    tracks: Optional[List[Dict[str, Any]]] = None
+    tracks: Optional[List[Dict[str, Any]]] = None,
+    playlist_id: Optional[str] = None,
+    user_token: Optional[str] = None
 ) -> Dict[str, Any]:
-    playlist_id = f"pl_{uuid.uuid4().hex[:12]}"
+    if supabase_service.is_supabase_configured():
+        return supabase_service.create_user_playlist(
+            user_id=user_id,
+            name=name,
+            description=description,
+            cover_url=cover_url,
+            source=source,
+            spotify_playlist_id=spotify_playlist_id,
+            tracks=tracks,
+            playlist_id=playlist_id,
+            user_token=user_token
+        )
+    if not playlist_id:
+        playlist_id = f"pl_{uuid.uuid4().hex[:12]}"
     now = int(time.time())
     conn = get_db_connection()
     try:
@@ -324,7 +429,9 @@ def create_user_playlist(
     finally:
         conn.close()
 
-def get_playlist_by_id(playlist_id: str) -> Optional[Dict[str, Any]]:
+def get_playlist_by_id(playlist_id: str, user_token: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    if supabase_service.is_supabase_configured():
+        return supabase_service.get_playlist_by_id(playlist_id, user_token=user_token)
     conn = get_db_connection()
     try:
         row = conn.execute("SELECT * FROM user_playlists WHERE id = ?", (playlist_id,)).fetchone()
@@ -346,7 +453,9 @@ def get_playlist_by_id(playlist_id: str) -> Optional[Dict[str, Any]]:
     finally:
         conn.close()
 
-def delete_user_playlist(user_id: str, playlist_id: str) -> bool:
+def delete_user_playlist(user_id: str, playlist_id: str, user_token: Optional[str] = None) -> bool:
+    if supabase_service.is_supabase_configured():
+        return supabase_service.delete_user_playlist(user_id, playlist_id, user_token=user_token)
     conn = get_db_connection()
     try:
         with conn:
@@ -372,7 +481,9 @@ def delete_user_playlist(user_id: str, playlist_id: str) -> bool:
     finally:
         conn.close()
 
-def add_track_to_playlist(playlist_id: str, track: Dict[str, Any]) -> bool:
+def add_track_to_playlist(playlist_id: str, track: Dict[str, Any], user_token: Optional[str] = None) -> bool:
+    if supabase_service.is_supabase_configured():
+        return supabase_service.add_track_to_playlist(playlist_id, track, user_token=user_token)
     video_id = track.get("videoId")
     if not video_id:
         return False
@@ -399,7 +510,9 @@ def add_track_to_playlist(playlist_id: str, track: Dict[str, Any]) -> bool:
     finally:
         conn.close()
 
-def remove_track_from_playlist(playlist_id: str, video_id: str) -> bool:
+def remove_track_from_playlist(playlist_id: str, video_id: str, user_token: Optional[str] = None) -> bool:
+    if supabase_service.is_supabase_configured():
+        return supabase_service.remove_track_from_playlist(playlist_id, video_id, user_token=user_token)
     conn = get_db_connection()
     try:
         with conn:
@@ -413,11 +526,14 @@ def remove_track_from_playlist(playlist_id: str, video_id: str) -> bool:
     finally:
         conn.close()
 
-def save_spotify_playlists_for_user(user_id: str, spotify_playlists: List[Dict[str, Any]]) -> int:
+def save_spotify_playlists_for_user(user_id: str, spotify_playlists: List[Dict[str, Any]], user_token: Optional[str] = None) -> int:
     """
-    Saves or refreshes imported Spotify playlists and their tracks for a user.
-    Returns the count of saved playlists.
+    Saves or refreshes imported Spotify playlists for a user as lightweight headers.
+    Individual songs are not stored in database to conserve space; tracks are loaded on demand via link.
     """
+    if supabase_service.is_supabase_configured():
+        return supabase_service.save_spotify_playlists_for_user(user_id, spotify_playlists, user_token=user_token)
+
     conn = get_db_connection()
     saved_count = 0
     now = int(time.time())
@@ -427,13 +543,16 @@ def save_spotify_playlists_for_user(user_id: str, spotify_playlists: List[Dict[s
                 sp_id = sp_pl.get("spotify_id") or sp_pl.get("id")
                 name = sp_pl.get("name") or "Spotify Playlist"
                 desc = sp_pl.get("description") or ""
-                cover = sp_pl.get("cover_url") or sp_pl.get("images", [{}])[0].get("url") if isinstance(sp_pl.get("images"), list) and sp_pl.get("images") else None
-                tracks = sp_pl.get("tracks") or []
+                cover = sp_pl.get("cover_url") or (
+                    sp_pl.get("images", [{}])[0].get("url")
+                    if isinstance(sp_pl.get("images"), list) and sp_pl.get("images")
+                    else None
+                )
 
                 # Check if this Spotify playlist was already imported for this user
                 existing = conn.execute(
-                    "SELECT id FROM user_playlists WHERE user_id = ? AND spotify_playlist_id = ?",
-                    (user_id, sp_id)
+                    "SELECT id FROM user_playlists WHERE user_id = ? AND (id = ? OR spotify_playlist_id = ?)",
+                    (user_id, f"sp_pl_{sp_id}", sp_id)
                 ).fetchone()
 
                 if existing:
@@ -446,8 +565,6 @@ def save_spotify_playlists_for_user(user_id: str, spotify_playlists: List[Dict[s
                         """,
                         (name, desc, cover, now, playlist_id)
                     )
-                    # Clear old tracks and re-insert
-                    conn.execute("DELETE FROM user_playlist_tracks WHERE playlist_id = ?", (playlist_id,))
                 else:
                     playlist_id = f"sp_pl_{sp_id}" if sp_id else f"sp_pl_{uuid.uuid4().hex[:10]}"
                     conn.execute(
@@ -458,19 +575,8 @@ def save_spotify_playlists_for_user(user_id: str, spotify_playlists: List[Dict[s
                         """,
                         (playlist_id, user_id, name, desc, cover, sp_id, now, now)
                     )
-
-                # Insert tracks
-                for idx, track in enumerate(tracks):
-                    vid = track.get("videoId") or f"sp_{uuid.uuid4().hex[:8]}"
-                    track["videoId"] = vid
-                    conn.execute(
-                        """
-                        INSERT OR REPLACE INTO user_playlist_tracks (playlist_id, video_id, track_json, position, created_at)
-                        VALUES (?, ?, ?, ?, ?)
-                        """,
-                        (playlist_id, vid, json.dumps(track), idx, now)
-                    )
                 saved_count += 1
         return saved_count
     finally:
         conn.close()
+

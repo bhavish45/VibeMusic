@@ -25,6 +25,7 @@ class SpotifyCallbackRequest(BaseModel):
     redirect_uri: Optional[str] = None
 
 class CreatePlaylistRequest(BaseModel):
+    id: Optional[str] = None
     name: str
     description: Optional[str] = None
     cover_url: Optional[str] = None
@@ -33,9 +34,13 @@ class CreatePlaylistRequest(BaseModel):
 class AddTrackRequest(BaseModel):
     track: Dict[str, Any]
 
+class FollowArtistRequest(BaseModel):
+    artist: Dict[str, Any]
+
 class SyncLocalDataRequest(BaseModel):
     favorites: Optional[List[Dict[str, Any]]] = None
     playlists: Optional[List[Dict[str, Any]]] = None
+    followedArtists: Optional[List[Dict[str, Any]]] = None
 
 class ResolveTrackRequest(BaseModel):
     title: str
@@ -225,7 +230,8 @@ async def import_spotify_url(
 
     saved_count = 0
     if user:
-        saved_count = db_service.save_spotify_playlists_for_user(user["id"], [playlist_data])
+        user_token = user.get("token")
+        saved_count = db_service.save_spotify_playlists_for_user(user["id"], [playlist_data], user_token=user_token)
 
     return {
         "success": True,
@@ -234,15 +240,33 @@ async def import_spotify_url(
         "importedPlaylistsCount": saved_count
     }
 
+@spotify_router.get("/playlist/{spotify_id}")
+async def get_spotify_playlist_details(spotify_id: str):
+    """
+    Fetches Spotify playlist tracks on-demand without saving tracks to the cloud database.
+    """
+    clean_id = spotify_id.replace("sp_pl_", "").strip()
+    try:
+        playlist_data = await spotify_service.import_spotify_playlist_by_url(
+            f"https://open.spotify.com/playlist/{clean_id}"
+        )
+        return {"success": True, "playlist": playlist_data}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 # ----------------- USER LIBRARY ENDPOINTS (/api/user) -----------------
 
 @user_router.get("/library")
 def get_user_library(user: Dict[str, Any] = Depends(auth_service.get_current_user)):
-    favorites = db_service.get_user_favorites(user["id"])
-    playlists = db_service.get_user_playlists(user["id"])
+    user_token = user.get("token")
+    favorites = db_service.get_user_favorites(user["id"], user_token=user_token)
+    playlists = db_service.get_user_playlists(user["id"], user_token=user_token)
+    followed_artists = db_service.get_user_followed_artists(user["id"], user_token=user_token)
     return {
         "favorites": favorites,
-        "playlists": playlists
+        "playlists": playlists,
+        "followedArtists": followed_artists
     }
 
 @user_router.post("/favorites")
@@ -253,7 +277,8 @@ def add_favorite(
     video_id = track.get("videoId")
     if not video_id:
         raise HTTPException(status_code=400, detail="Invalid track data: videoId required.")
-    success = db_service.add_user_favorite(user["id"], track)
+    user_token = user.get("token")
+    success = db_service.add_user_favorite(user["id"], track, user_token=user_token)
     return {"success": success, "videoId": video_id, "isFavorite": True}
 
 @user_router.delete("/favorites/{video_id}")
@@ -261,7 +286,8 @@ def remove_favorite(
     video_id: str,
     user: Dict[str, Any] = Depends(auth_service.get_current_user)
 ):
-    success = db_service.remove_user_favorite(user["id"], video_id)
+    user_token = user.get("token")
+    success = db_service.remove_user_favorite(user["id"], video_id, user_token=user_token)
     return {"success": success, "videoId": video_id, "isFavorite": False}
 
 @user_router.post("/playlists")
@@ -271,12 +297,15 @@ def create_playlist(
 ):
     if not req.name.strip():
         raise HTTPException(status_code=400, detail="Playlist name is required.")
+    user_token = user.get("token")
     playlist = db_service.create_user_playlist(
         user_id=user["id"],
         name=req.name,
         description=req.description,
         cover_url=req.cover_url,
-        tracks=req.tracks
+        tracks=req.tracks,
+        playlist_id=req.id,
+        user_token=user_token
     )
     return playlist
 
@@ -285,7 +314,8 @@ def delete_playlist(
     playlist_id: str,
     user: Dict[str, Any] = Depends(auth_service.get_current_user)
 ):
-    deleted = db_service.delete_user_playlist(user["id"], playlist_id)
+    user_token = user.get("token")
+    deleted = db_service.delete_user_playlist(user["id"], playlist_id, user_token=user_token)
     if not deleted:
         raise HTTPException(status_code=404, detail="Playlist not found or unauthorized.")
     return {"success": True, "playlistId": playlist_id}
@@ -296,13 +326,14 @@ def add_track_to_user_playlist(
     req: AddTrackRequest,
     user: Dict[str, Any] = Depends(auth_service.get_current_user)
 ):
-    playlist = db_service.get_playlist_by_id(playlist_id)
+    user_token = user.get("token")
+    playlist = db_service.get_playlist_by_id(playlist_id, user_token=user_token)
     if not playlist or playlist.get("user_id") != user["id"]:
         raise HTTPException(status_code=404, detail="Playlist not found or unauthorized.")
     if playlist.get("source") == "spotify":
         raise HTTPException(status_code=400, detail="Cannot modify imported Spotify playlists.")
-    success = db_service.add_track_to_playlist(playlist_id, req.track)
-    return {"success": success, "playlist": db_service.get_playlist_by_id(playlist_id)}
+    success = db_service.add_track_to_playlist(playlist_id, req.track, user_token=user_token)
+    return {"success": success, "playlist": db_service.get_playlist_by_id(playlist_id, user_token=user_token)}
 
 @user_router.delete("/playlists/{playlist_id}/tracks/{video_id}")
 def remove_track_from_user_playlist(
@@ -310,13 +341,46 @@ def remove_track_from_user_playlist(
     video_id: str,
     user: Dict[str, Any] = Depends(auth_service.get_current_user)
 ):
-    playlist = db_service.get_playlist_by_id(playlist_id)
+    user_token = user.get("token")
+    playlist = db_service.get_playlist_by_id(playlist_id, user_token=user_token)
     if not playlist or playlist.get("user_id") != user["id"]:
         raise HTTPException(status_code=404, detail="Playlist not found or unauthorized.")
     if playlist.get("source") == "spotify":
         raise HTTPException(status_code=400, detail="Cannot delete tracks from imported Spotify playlists.")
-    success = db_service.remove_track_from_playlist(playlist_id, video_id)
-    return {"success": success, "playlist": db_service.get_playlist_by_id(playlist_id)}
+    success = db_service.remove_track_from_playlist(playlist_id, video_id, user_token=user_token)
+    return {"success": success, "playlist": db_service.get_playlist_by_id(playlist_id, user_token=user_token)}
+
+# ----------------- FOLLOWED ARTISTS ENDPOINTS (/api/user/artists) -----------------
+
+@user_router.get("/artists")
+def get_followed_artists(user: Dict[str, Any] = Depends(auth_service.get_current_user)):
+    user_token = user.get("token")
+    artists = db_service.get_user_followed_artists(user["id"], user_token=user_token)
+    return {"artists": artists}
+
+@user_router.post("/artists")
+def follow_artist(
+    req: FollowArtistRequest,
+    user: Dict[str, Any] = Depends(auth_service.get_current_user)
+):
+    artist = req.artist
+    name = (artist.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Artist name is required.")
+    user_token = user.get("token")
+    success = db_service.add_user_followed_artist(user["id"], artist, user_token=user_token)
+    return {"success": success, "artist": artist, "isFollowing": True}
+
+@user_router.delete("/artists/{artist_name}")
+def unfollow_artist(
+    artist_name: str,
+    user: Dict[str, Any] = Depends(auth_service.get_current_user)
+):
+    if not artist_name.strip():
+        raise HTTPException(status_code=400, detail="Artist name is required.")
+    user_token = user.get("token")
+    success = db_service.remove_user_followed_artist(user["id"], artist_name, user_token=user_token)
+    return {"success": success, "artistName": artist_name, "isFollowing": False}
 
 @user_router.post("/sync-local")
 def sync_local_data(
@@ -324,15 +388,17 @@ def sync_local_data(
     user: Dict[str, Any] = Depends(auth_service.get_current_user)
 ):
     """
-    Syncs/merges guest local favorites and playlists into the authenticated user's account.
+    Syncs/merges guest local favorites, playlists, and followed artists into the authenticated user's account.
     """
+    user_token = user.get("token")
     synced_favs = 0
     synced_pls = 0
+    synced_artists = 0
 
     if req.favorites:
         for t in req.favorites:
             if t.get("videoId"):
-                db_service.add_user_favorite(user["id"], t)
+                db_service.add_user_favorite(user["id"], t, user_token=user_token)
                 synced_favs += 1
 
     if req.playlists:
@@ -342,16 +408,25 @@ def sync_local_data(
                 db_service.create_user_playlist(
                     user_id=user["id"],
                     name=name,
-                    tracks=p.get("tracks", [])
+                    tracks=p.get("tracks", []),
+                    user_token=user_token
                 )
                 synced_pls += 1
+
+    if req.followedArtists:
+        for a in req.followedArtists:
+            if a.get("name"):
+                db_service.add_user_followed_artist(user["id"], a, user_token=user_token)
+                synced_artists += 1
 
     return {
         "success": True,
         "syncedFavorites": synced_favs,
         "syncedPlaylists": synced_pls,
+        "syncedArtists": synced_artists,
         "library": {
-            "favorites": db_service.get_user_favorites(user["id"]),
-            "playlists": db_service.get_user_playlists(user["id"])
+            "favorites": db_service.get_user_favorites(user["id"], user_token=user_token),
+            "playlists": db_service.get_user_playlists(user["id"], user_token=user_token),
+            "followedArtists": db_service.get_user_followed_artists(user["id"], user_token=user_token)
         }
     }
