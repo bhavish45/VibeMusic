@@ -251,6 +251,11 @@ powershell -ExecutionPolicy Bypass -Command "npm run dev"
   - *Synchronous Logout Hook Dispatch*: Added `registerOnLogout` in [authStore.ts](file:///c:/Projects/VibeMusic/frontend/src/store/authStore.ts) connected to [playerStore.ts](file:///c:/Projects/VibeMusic/frontend/src/store/playerStore.ts), replacing the delayed dynamic import with immediate synchronous execution on sign out.
   - *Library Sub-Section Unauthenticated States*: Updated [library/page.tsx](file:///c:/Projects/VibeMusic/frontend/src/app/library/page.tsx) to show a dedicated "Sign In to View Followed Artists" prompt with email login button (matching Favorites) when `!isAuthenticated`, updated the 2x2 Followed overview card to display "Sign in to follow", and auto-reset any open playlist detail view on logout.
 
+- **Unified UserButton & Search Header Alignment**:
+  - *Unified Component*: Created [UserButton.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/layout/UserButton.tsx) encapsulating the exact Home page "Sign In" button styling (`px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-semibold` with teal glow and `w-3.5 h-3.5` icon) and authenticated avatar dropdown menu with Sign Out.
+  - *Exact Size & Placement on Search Page*: Updated [/search](file:///c:/Projects/VibeMusic/frontend/src/app/search/page.tsx) to replace the oversized `py-3.5 rounded-2xl` button with `<UserButton className="flex-shrink-0" />`, placing the button in the exact same top-right position and identical pill size as in the Home page.
+  - *Consistent Header Integration*: Refactored [Header.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/layout/Header.tsx) across Home and Library pages to share the identical `UserButton` component.
+
 ---
 
 ## 4. Suggested Next Steps for Tomorrow
