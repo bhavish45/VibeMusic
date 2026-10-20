@@ -345,7 +345,16 @@ def _format_playlist(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
     title = item.get("title") or "Unknown Playlist"
     browse_id = item.get("browseId") or ""
-    author = item.get("author") or "Community"
+    author_raw = item.get("author")
+    author = "Community"
+    if isinstance(author_raw, dict):
+        author = author_raw.get("name", "Community")
+    elif isinstance(author_raw, list) and len(author_raw) > 0:
+        first = author_raw[0]
+        author = first.get("name", "Community") if isinstance(first, dict) else str(first)
+    elif isinstance(author_raw, str) and author_raw.strip():
+        author = author_raw.strip()
+
     item_count = item.get("itemCount") or ""
     
     raw_thumbs = item.get("thumbnails", [])
@@ -414,10 +423,18 @@ def get_album_details(browse_id: str) -> Dict[str, Any]:
             except Exception as e:
                 print(f"Direct yt.get_album({clean_id}) failed: {e}")
 
-        # Fallback to playlist lookup if direct album failed
-        if not alb:
+        # Fallback to playlist lookup if direct album failed or has no tracks
+        if not alb or not alb.get("tracks"):
             try:
-                pl = yt.get_playlist(browse_id, limit=100)
+                pl = None
+                for candidate in [browse_id, clean_id, f"VL{clean_id}"]:
+                    try:
+                        pl = yt.get_playlist(candidate, limit=100)
+                        if pl and pl.get("tracks"):
+                            break
+                    except Exception:
+                        pass
+
                 if pl and pl.get("tracks"):
                     formatted_tracks = []
                     pl_thumbs = pl.get("thumbnails", [])
@@ -428,10 +445,23 @@ def get_album_details(browse_id: str) -> Dict[str, Any]:
                         ft = _format_track(t)
                         if ft:
                             formatted_tracks.append(ft)
+
+                    author_raw = pl.get("author")
+                    author_name = "Artist"
+                    if isinstance(author_raw, dict):
+                        author_name = author_raw.get("name", "Artist")
+                    elif isinstance(author_raw, list) and len(author_raw) > 0:
+                        first = author_raw[0]
+                        author_name = first.get("name", "Artist") if isinstance(first, dict) else str(first)
+                    elif isinstance(author_raw, str):
+                        author_name = author_raw
+
                     return {
                         "title": pl.get("title", "Album"),
-                        "year": pl.get("year", ""),
-                        "artists": pl.get("artists", [{"name": pl.get("author", "Artist")}]),
+                        "year": str(pl.get("year") or ""),
+                        "artist": author_name,
+                        "author": author_name,
+                        "artists": [{"name": author_name}],
                         "thumbnails": pl_thumbs,
                         "poster": best_thumb,
                         "tracks": formatted_tracks
@@ -454,10 +484,23 @@ def get_album_details(browse_id: str) -> Dict[str, Any]:
             if ft:
                 formatted_tracks.append(ft)
 
+        raw_artists = alb.get("artists", [])
+        artist_name = "Artist"
+        if isinstance(raw_artists, list):
+            names = [a.get("name") if isinstance(a, dict) else str(a) for a in raw_artists if a]
+            if names:
+                artist_name = ", ".join(names)
+        elif isinstance(raw_artists, str):
+            artist_name = raw_artists
+        elif isinstance(raw_artists, dict):
+            artist_name = raw_artists.get("name", "Artist")
+
         return {
             "title": album_title,
-            "year": alb.get("year", ""),
-            "artists": alb.get("artists", []),
+            "year": str(alb.get("year") or ""),
+            "artist": artist_name,
+            "author": artist_name,
+            "artists": raw_artists if isinstance(raw_artists, list) else [{"name": artist_name}],
             "thumbnails": album_thumbs,
             "poster": best_thumb,
             "tracks": formatted_tracks
@@ -485,6 +528,12 @@ def get_playlist_details(browse_id: str) -> Dict[str, Any]:
             except Exception:
                 pass
 
+        # If playlist lookup returned no tracks and id contains OLAK or MPREb_, try album lookup
+        if (not pl or not pl.get("tracks")) and ("OLAK" in browse_id or "MPREb_" in browse_id):
+            alb_res = get_album_details(browse_id)
+            if alb_res and alb_res.get("tracks"):
+                return alb_res
+
         if not pl:
             return {"title": "Playlist", "tracks": []}
 
@@ -498,9 +547,20 @@ def get_playlist_details(browse_id: str) -> Dict[str, Any]:
             if ft:
                 formatted_tracks.append(ft)
 
+        author_raw = pl.get("author")
+        author_name = "Community"
+        if isinstance(author_raw, dict):
+            author_name = author_raw.get("name", "Community")
+        elif isinstance(author_raw, list) and len(author_raw) > 0:
+            first = author_raw[0]
+            author_name = first.get("name", "Community") if isinstance(first, dict) else str(first)
+        elif isinstance(author_raw, str):
+            author_name = author_raw
+
         return {
             "title": pl_title,
-            "author": pl.get("author", "Community"),
+            "author": author_name,
+            "artist": author_name,
             "thumbnails": pl_thumbs,
             "poster": best_thumb,
             "tracks": formatted_tracks

@@ -287,6 +287,23 @@ powershell -ExecutionPolicy Bypass -Command "npm run dev"
 - **YouTube Music Album & Playlist Service Enhancements**:
   - *Browse ID Resolution*: Added fallback resolution for `OLAK` and `VL` prefixed browse IDs in [yt_service.py](file:///c:/Projects/VibeMusic/backend/services/yt_service.py) to resolve full album metadata or fall back to playlist track lookup.
   - *Candidate Search*: Intelligently tests alternative browse ID candidates when fetching playlists to prevent empty track listings.
+  - *Author Object Sanitization*: Fixed a runtime React child crash in [SearchPage.tsx](file:///c:/Projects/VibeMusic/frontend/src/app/search/page.tsx) and [yt_service.py](file:///c:/Projects/VibeMusic/backend/services/yt_service.py) by sanitizing `author` object structures `{ name, id }` into clean strings.
+
+- **What's New / Patch Updates Modal (v1.0.0 Release Notes)**:
+  - *Data Module*: Created [updates.ts](file:///c:/Projects/VibeMusic/frontend/src/data/updates.ts) maintaining release history (`v1.0.0`) with categorized changes (`New Features`, `Enhancements`, `Fixes`, `Design`), version badges, and release dates.
+  - *Updates Modal*: Implemented [UpdatesModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/UpdatesModal.tsx) with dark glassmorphism, category pill icons, version cards, and dismiss controls. Persists viewed version in localStorage.
+  - *Header Bell Icon Integration*: Connected the top-right Bell button on both Home and Library headers in [Header.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/layout/Header.tsx) to trigger the Updates modal, with an active cyan pulse indicator for unread updates.
+  - *Player Store State*: Added `isUpdatesOpen`, `openUpdates()`, and `closeUpdates()` in [playerStore.ts](file:///c:/Projects/VibeMusic/frontend/src/store/playerStore.ts), and mounted the modal globally in [layout.tsx](file:///c:/Projects/VibeMusic/frontend/src/app/layout.tsx).
+
+- **Synchronized English Letters (Romanized) Lyrics Provider**:
+  - *Issue Resolved*: When "English Lyrics from Provider" was toggled ON in Settings, it previously failed to sync lyrics or translated the words instead of presenting the same non-English lyrics written in English letters (Latin/Romanized script).
+  - *Native Romanized LRCLIB Matching*: Updated [lyricsService.ts](file:///c:/Projects/VibeMusic/frontend/src/lib/lyricsService.ts) to query and prioritize the provider's authentic Romanized / English-letter synced versions (`track Romanized`, `track Romaji`, `cleanTitle + cleanArtist`).
+  - *Zero Word-Translation / Preserved Lyric Fidelity*: Does not translate words into other meanings; preserves the authentic lyrics phonetically in English letters (e.g., `"मुझको इतना बताए कोई"` &rarr; `"Mujhko itna bataye koi"`).
+  - *Perfect Audio Synchronization*: If LRCLIB provides synced LRC lines, uses them directly for millisecond-accurate highlighting and auto-scrolling. If plain Romanized lyrics exist, aligns them to base vocal timestamps using `alignLinesToTimestamps`. If no Romanized version exists, transliterates native script directly into English letters with 1:1 timestamps.
+- **MiniPlayer Visibility in Artist Profile**:
+  - *Z-Index Hierarchy Normalization*: Adjusted [ArtistModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/ArtistModal.tsx) to `z-[60]` and elevated [MiniPlayer.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/MiniPlayer.tsx) to `z-[70]` so active playback controls float seamlessly at the bottom of the artist profile screen instead of being hidden behind it.
+  - *Dynamic Bottom Anchoring*: Subscribed `MiniPlayer` to `activeArtistModal`. When any artist profile is open, the miniplayer automatically docks flush to `bottom-0` across all viewports (avoiding the mobile bottom navigation gap since `ArtistModal` covers the base tabs).
+  - *Layering & Stacking Integrity*: Elevated [ExpandedPlayer.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/ExpandedPlayer.tsx) to `z-[80]`, [FullScreenLyrics.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/FullScreenLyrics.tsx) to `z-[85]`, [QueueDrawer.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/QueueDrawer.tsx) to `z-[90]`, and dialog modals to `z-[95]`, ensuring clicking the miniplayer or queue drawer from an artist profile expands smoothly on top.
 
 ---
 
