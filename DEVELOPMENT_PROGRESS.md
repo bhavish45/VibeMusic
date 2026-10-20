@@ -256,6 +256,13 @@ powershell -ExecutionPolicy Bypass -Command "npm run dev"
   - *Exact Size & Placement on Search Page*: Updated [/search](file:///c:/Projects/VibeMusic/frontend/src/app/search/page.tsx) to replace the oversized `py-3.5 rounded-2xl` button with `<UserButton className="flex-shrink-0" />`, placing the button in the exact same top-right position and identical pill size as in the Home page.
   - *Consistent Header Integration*: Refactored [Header.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/layout/Header.tsx) across Home and Library pages to share the identical `UserButton` component.
 
+- **Dynamic Playlist Poster Resolution (First Song Poster Adoption)**:
+  - *Default for Empty Playlists*: When creating a local or custom playlist without any songs, the playlist retains its default gradient placeholder (`bg-gradient-to-tr from-[#00d2c4] to-blue-600`) with the playlist's initial letter.
+  - *First Track Poster Adoption*: As soon as any song is added to the playlist, the playlist dynamically adopts the first song's poster (`first.poster || first.thumbnails?.[0]?.url || first.fallbackPoster`) as its cover artwork across all UI views ([library/page.tsx](file:///c:/Projects/VibeMusic/frontend/src/app/library/page.tsx), playlist detail header, and [AddToPlaylistModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/AddToPlaylistModal.tsx)).
+  - *Reversion & Dynamic Adjustments*: If tracks are removed, the cover automatically adjusts to the remaining first track. If all tracks are removed, it gracefully falls back to the default gradient initial placeholder.
+  - *Backend & Persistence Parity*: Updated [db_service.py](file:///c:/Projects/VibeMusic/backend/services/db_service.py) and [supabase_service.py](file:///c:/Projects/VibeMusic/backend/services/supabase_service.py) so database operations maintain parity with the frontend store.
+  - *Spotify Playlist Integrity*: Imported Spotify playlists continue to retain their authentic Spotify playlist covers without alteration.
+
 ---
 
 ## 4. Suggested Next Steps for Tomorrow

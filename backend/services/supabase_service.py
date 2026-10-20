@@ -167,6 +167,12 @@ def get_user_playlists(user_id: str, user_token: Optional[str] = None) -> List[D
                 elif isinstance(t_json, dict):
                     tracks.append(t_json)
             p["tracks"] = tracks
+            if p.get("source") != "spotify":
+                if tracks:
+                    ft = tracks[0]
+                    p["cover_url"] = ft.get("poster") or (ft.get("thumbnails") and ft["thumbnails"][0].get("url")) or ft.get("fallbackPoster") or p.get("cover_url")
+                else:
+                    p["cover_url"] = None
             playlists.append(p)
         return playlists
     except Exception as e:
@@ -203,6 +209,12 @@ def get_playlist_by_id(playlist_id: str, user_token: Optional[str] = None) -> Op
             elif isinstance(t_json, dict):
                 tracks.append(t_json)
         p["tracks"] = tracks
+        if p.get("source") != "spotify":
+            if tracks:
+                ft = tracks[0]
+                p["cover_url"] = ft.get("poster") or (ft.get("thumbnails") and ft["thumbnails"][0].get("url")) or ft.get("fallbackPoster") or p.get("cover_url")
+            else:
+                p["cover_url"] = None
         return p
     except Exception as e:
         print(f"[Supabase] Error fetching playlist by id: {e}")

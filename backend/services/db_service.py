@@ -370,6 +370,12 @@ def get_user_playlists(user_id: str, user_token: Optional[str] = None) -> List[D
                 except Exception:
                     pass
             p_dict["tracks"] = tracks
+            if p_dict.get("source") != "spotify":
+                if tracks:
+                    ft = tracks[0]
+                    p_dict["cover_url"] = ft.get("poster") or (ft.get("thumbnails") and ft["thumbnails"][0].get("url")) or ft.get("fallbackPoster") or p_dict.get("cover_url")
+                else:
+                    p_dict["cover_url"] = None
             playlists.append(p_dict)
         return playlists
     finally:
@@ -449,6 +455,12 @@ def get_playlist_by_id(playlist_id: str, user_token: Optional[str] = None) -> Op
             except Exception:
                 pass
         p_dict["tracks"] = tracks
+        if p_dict.get("source") != "spotify":
+            if tracks:
+                ft = tracks[0]
+                p_dict["cover_url"] = ft.get("poster") or (ft.get("thumbnails") and ft["thumbnails"][0].get("url")) or ft.get("fallbackPoster") or p_dict.get("cover_url")
+            else:
+                p_dict["cover_url"] = None
         return p_dict
     finally:
         conn.close()
@@ -505,7 +517,20 @@ def add_track_to_playlist(playlist_id: str, track: Dict[str, Any], user_token: O
                 """,
                 (playlist_id, video_id, json.dumps(track), next_pos, now)
             )
-            conn.execute("UPDATE user_playlists SET updated_at = ? WHERE id = ?", (now, playlist_id))
+
+            # For custom playlists, update cover_url with the first track's poster
+            pl_row = conn.execute("SELECT source, cover_url FROM user_playlists WHERE id = ?", (playlist_id,)).fetchone()
+            if pl_row and pl_row["source"] != "spotify":
+                track_poster = track.get("poster") or (track.get("thumbnails") and track["thumbnails"][0].get("url")) or track.get("fallbackPoster")
+                if next_pos == 0 and track_poster:
+                    conn.execute(
+                        "UPDATE user_playlists SET cover_url = ?, updated_at = ? WHERE id = ?",
+                        (track_poster, now, playlist_id)
+                    )
+                else:
+                    conn.execute("UPDATE user_playlists SET updated_at = ? WHERE id = ?", (now, playlist_id))
+            else:
+                conn.execute("UPDATE user_playlists SET updated_at = ? WHERE id = ?", (now, playlist_id))
         return True
     finally:
         conn.close()
@@ -521,7 +546,25 @@ def remove_track_from_playlist(playlist_id: str, video_id: str, user_token: Opti
                 (playlist_id, video_id)
             )
             now = int(time.time())
-            conn.execute("UPDATE user_playlists SET updated_at = ? WHERE id = ?", (now, playlist_id))
+            pl_row = conn.execute("SELECT source FROM user_playlists WHERE id = ?", (playlist_id,)).fetchone()
+            if pl_row and pl_row["source"] != "spotify":
+                first_tr = conn.execute(
+                    "SELECT track_json FROM user_playlist_tracks WHERE playlist_id = ? ORDER BY position ASC, created_at ASC LIMIT 1",
+                    (playlist_id,)
+                ).fetchone()
+                new_cover = None
+                if first_tr:
+                    try:
+                        ft = json.loads(first_tr["track_json"])
+                        new_cover = ft.get("poster") or (ft.get("thumbnails") and ft["thumbnails"][0].get("url")) or ft.get("fallbackPoster")
+                    except Exception:
+                        pass
+                conn.execute(
+                    "UPDATE user_playlists SET cover_url = ?, updated_at = ? WHERE id = ?",
+                    (new_cover, now, playlist_id)
+                )
+            else:
+                conn.execute("UPDATE user_playlists SET updated_at = ? WHERE id = ?", (now, playlist_id))
         return True
     finally:
         conn.close()
