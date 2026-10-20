@@ -263,6 +263,11 @@ powershell -ExecutionPolicy Bypass -Command "npm run dev"
   - *Backend & Persistence Parity*: Updated [db_service.py](file:///c:/Projects/VibeMusic/backend/services/db_service.py) and [supabase_service.py](file:///c:/Projects/VibeMusic/backend/services/supabase_service.py) so database operations maintain parity with the frontend store.
   - *Spotify Playlist Integrity*: Imported Spotify playlists continue to retain their authentic Spotify playlist covers without alteration.
 
+- **Strict Spotify Playlist URL Validation & Null Playlist Prevention**:
+  - *Frontend Input Validation*: Added regex pattern checking in [library/page.tsx](file:///c:/Projects/VibeMusic/frontend/src/app/library/page.tsx) to ensure inputs conform to valid Spotify playlist links or IDs (15–35 characters). Random strings like `"hi"` are immediately caught with a clear prompt (`"Invalid link. Please enter a valid Spotify playlist link..."`) before sending an API request.
+  - *Backend Rejection for Invalid URLs*: Updated [spotify_service.py](file:///c:/Projects/VibeMusic/backend/services/spotify_service.py) to validate playlist IDs and inspect Spotify embed metadata. If a link points to an invalid/non-existent entity or contains 0 tracks, it raises an explicit 400 error (`"Invalid Spotify playlist URL. Please provide a valid link..."`), preventing empty or null playlists from being created.
+  - *Store & Database Sanitization*: Added filter guards across [playerStore.ts](file:///c:/Projects/VibeMusic/frontend/src/store/playerStore.ts) (`initPersistedState` and `fetchUserLibrary`) and [db_service.py](file:///c:/Projects/VibeMusic/backend/services/db_service.py) to ignore and clean any legacy corrupted playlists named `"null"` or with invalid Spotify IDs.
+
 ---
 
 ## 4. Suggested Next Steps for Tomorrow

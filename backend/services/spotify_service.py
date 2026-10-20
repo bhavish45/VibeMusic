@@ -207,8 +207,13 @@ async def import_spotify_playlist_by_url(url_or_id: str) -> Dict[str, Any]:
     Fetches each individual track's album cover via Spotify oEmbed.
     """
     clean_input = url_or_id.strip()
-    match = re.search(r"playlist[/:]([a-zA-Z0-9]+)", clean_input)
-    playlist_id = match.group(1) if match else clean_input
+    match = re.search(r"playlist[/:]([a-zA-Z0-9]{15,35})", clean_input)
+    if match:
+        playlist_id = match.group(1)
+    elif re.match(r"^[a-zA-Z0-9]{15,35}$", clean_input):
+        playlist_id = clean_input
+    else:
+        raise Exception("Invalid Spotify playlist URL. Please provide a valid link in the format: https://open.spotify.com/playlist/...")
 
     embed_url = f"https://open.spotify.com/embed/playlist/{playlist_id}"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -229,12 +234,17 @@ async def import_spotify_playlist_by_url(url_or_id: str) -> Dict[str, Any]:
         props = data.get("props", {}).get("pageProps", {})
         entity = props.get("state", {}).get("data", {}).get("entity", {}) or props.get("entity", {})
 
-        name = entity.get("name") or entity.get("title") or "Imported Spotify Playlist"
+        if not entity or not isinstance(entity, dict):
+            raise Exception("Spotify playlist not found or inaccessible. Please verify the playlist link is public.")
+
+        name = entity.get("name") or entity.get("title")
+        track_items = entity.get("trackList", [])
+        if not name or name == "null" or not track_items:
+            raise Exception("Spotify playlist not found or contains no tracks. Please verify the link is public.")
+
         desc = entity.get("subtitle") or entity.get("description") or ""
         cover_sources = entity.get("coverArt", {}).get("sources", [])
         cover_url = cover_sources[0].get("url") if cover_sources else None
-
-        track_items = entity.get("trackList", [])
 
         # Fetch each track's individual album poster in parallel via Spotify oEmbed
         sem = asyncio.Semaphore(25)
@@ -332,6 +342,9 @@ async def import_spotify_playlist_by_url(url_or_id: str) -> Dict[str, Any]:
                 "fallbackPoster": individual_poster,
                 "source": "spotify"
             })
+
+        if not tracks:
+            raise Exception("No playable tracks could be retrieved from this Spotify playlist. Make sure the playlist is public.")
 
         return {
             "spotify_id": playlist_id,

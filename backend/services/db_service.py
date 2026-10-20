@@ -358,6 +358,10 @@ def get_user_playlists(user_id: str, user_token: Optional[str] = None) -> List[D
         playlists = []
         for r in rows:
             p_dict = dict(r)
+            if p_dict.get("source") == "spotify":
+                sp_id = p_dict.get("spotify_playlist_id") or p_dict.get("id", "").replace("sp_pl_", "")
+                if not sp_id or len(str(sp_id)) < 15 or p_dict.get("name") in ("null", "undefined"):
+                    continue
             # Fetch tracks for this playlist
             track_rows = conn.execute(
                 "SELECT track_json FROM user_playlist_tracks WHERE playlist_id = ? ORDER BY position ASC, created_at ASC",
@@ -584,7 +588,9 @@ def save_spotify_playlists_for_user(user_id: str, spotify_playlists: List[Dict[s
         with conn:
             for sp_pl in spotify_playlists:
                 sp_id = sp_pl.get("spotify_id") or sp_pl.get("id")
-                name = sp_pl.get("name") or "Spotify Playlist"
+                name = sp_pl.get("name")
+                if not sp_id or len(str(sp_id)) < 15 or not name or name in ("null", "undefined"):
+                    continue
                 desc = sp_pl.get("description") or ""
                 cover = sp_pl.get("cover_url") or (
                     sp_pl.get("images", [{}])[0].get("url")
