@@ -246,6 +246,11 @@ powershell -ExecutionPolicy Bypass -Command "npm run dev"
   - *Bottom MiniPlayer Queue Button*: Updated [MiniPlayer.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/MiniPlayer.tsx) controls to switch the Favorite (Heart) button to the left and add the Queue toggle button (`ListMusic`) directly to its right (`[Heart] [Queue] [Lyrics] [Fullscreen Expand] ...`) with active teal highlighting.
   - *Modal Z-Index Harmonization*: Elevated [AddToPlaylistModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/AddToPlaylistModal.tsx) to `z-[80]`, [CreatePlaylistModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/CreatePlaylistModal.tsx) to `z-[85]`, [AuthModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/AuthModal.tsx) to `z-[90]`, and [ArtistModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/ArtistModal.tsx) to `z-[75]` so any modal dialogs opened from the queue drawer or fullscreen player render above all background views.
 
+- **Complete User Database Data Purge on Logout**:
+  - *Followed Artists Reset*: Fixed a critical issue where [playerStore.ts](file:///c:/Projects/VibeMusic/frontend/src/store/playerStore.ts)'s `handleUserLogout` failed to clear `followedArtists` from store and persisted it back to localStorage on sign out. `handleUserLogout` now cleanly zeroes `favorites: []`, `followedArtists: []`, and `playlists: []` in store and localStorage.
+  - *Synchronous Logout Hook Dispatch*: Added `registerOnLogout` in [authStore.ts](file:///c:/Projects/VibeMusic/frontend/src/store/authStore.ts) connected to [playerStore.ts](file:///c:/Projects/VibeMusic/frontend/src/store/playerStore.ts), replacing the delayed dynamic import with immediate synchronous execution on sign out.
+  - *Library Sub-Section Unauthenticated States*: Updated [library/page.tsx](file:///c:/Projects/VibeMusic/frontend/src/app/library/page.tsx) to show a dedicated "Sign In to View Followed Artists" prompt with email login button (matching Favorites) when `!isAuthenticated`, updated the 2x2 Followed overview card to display "Sign in to follow", and auto-reset any open playlist detail view on logout.
+
 ---
 
 ## 4. Suggested Next Steps for Tomorrow
