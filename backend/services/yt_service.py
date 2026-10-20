@@ -398,14 +398,54 @@ def search(query: str, filter_type: str = "songs") -> List[Dict[str, Any]]:
 def get_album_details(browse_id: str) -> Dict[str, Any]:
     """Fetches complete album tracks and metadata."""
     try:
-        alb = yt.get_album(browse_id)
+        alb = None
+        clean_id = browse_id.replace("VL", "", 1) if browse_id.startswith("VL") else browse_id
+        if clean_id.startswith("OLAK"):
+            try:
+                resolved_id = yt.get_album_browse_id(clean_id)
+                if resolved_id:
+                    alb = yt.get_album(resolved_id)
+            except Exception as e:
+                print(f"Failed to resolve album browse ID from {clean_id}: {e}")
+
+        if not alb and not clean_id.startswith("OLAK"):
+            try:
+                alb = yt.get_album(clean_id)
+            except Exception as e:
+                print(f"Direct yt.get_album({clean_id}) failed: {e}")
+
+        # Fallback to playlist lookup if direct album failed
+        if not alb:
+            try:
+                pl = yt.get_playlist(browse_id, limit=100)
+                if pl and pl.get("tracks"):
+                    formatted_tracks = []
+                    pl_thumbs = pl.get("thumbnails", [])
+                    best_thumb = pl_thumbs[-1]["url"] if pl_thumbs else ""
+                    for t in pl.get("tracks", []):
+                        if not t.get("thumbnails") and pl_thumbs:
+                            t["thumbnails"] = pl_thumbs
+                        ft = _format_track(t)
+                        if ft:
+                            formatted_tracks.append(ft)
+                    return {
+                        "title": pl.get("title", "Album"),
+                        "year": pl.get("year", ""),
+                        "artists": pl.get("artists", [{"name": pl.get("author", "Artist")}]),
+                        "thumbnails": pl_thumbs,
+                        "poster": best_thumb,
+                        "tracks": formatted_tracks
+                    }
+            except Exception as e:
+                print(f"Fallback get_playlist({browse_id}) failed: {e}")
+
         if not alb:
             return {"title": "Album", "tracks": []}
-            
+
         album_title = alb.get("title", "Album")
         album_thumbs = alb.get("thumbnails", [])
         best_thumb = album_thumbs[-1]["url"] if album_thumbs else ""
-        
+
         formatted_tracks = []
         for t in alb.get("tracks", []):
             if not t.get("thumbnails") and album_thumbs:
@@ -413,7 +453,7 @@ def get_album_details(browse_id: str) -> Dict[str, Any]:
             ft = _format_track(t)
             if ft:
                 formatted_tracks.append(ft)
-                
+
         return {
             "title": album_title,
             "year": alb.get("year", ""),
@@ -430,20 +470,34 @@ def get_album_details(browse_id: str) -> Dict[str, Any]:
 def get_playlist_details(browse_id: str) -> Dict[str, Any]:
     """Fetches complete playlist tracks and metadata."""
     try:
-        pl = yt.get_playlist(browse_id, limit=100)
+        pl = None
+        candidates = [browse_id]
+        if browse_id.startswith("VL"):
+            candidates.append(browse_id[2:])
+        else:
+            candidates.append(f"VL{browse_id}")
+
+        for cid in candidates:
+            try:
+                pl = yt.get_playlist(cid, limit=100)
+                if pl and pl.get("tracks"):
+                    break
+            except Exception:
+                pass
+
         if not pl:
             return {"title": "Playlist", "tracks": []}
-            
+
         pl_title = pl.get("title", "Playlist")
         pl_thumbs = pl.get("thumbnails", [])
         best_thumb = pl_thumbs[-1]["url"] if pl_thumbs else ""
-        
+
         formatted_tracks = []
         for t in pl.get("tracks", []):
             ft = _format_track(t)
             if ft:
                 formatted_tracks.append(ft)
-                
+
         return {
             "title": pl_title,
             "author": pl.get("author", "Community"),

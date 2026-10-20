@@ -1,6 +1,6 @@
 # VibeMusic — Development Progress & Roadmap
 
-> **Date**: October 18, 2026  
+> **Date**: October 20, 2026  
 > **Status**: Operational, Feature-Complete & Fully Verified  
 > **Backend**: FastAPI on `http://localhost:8000` (docs: `http://localhost:8000/docs`)  
 > **Frontend**: Next.js 15 (Turbopack) on `http://localhost:3000`  
@@ -240,6 +240,10 @@ powershell -ExecutionPolicy Bypass -Command "npm run dev"
   - *Spotify Playlist Guide Production Polish*: Renamed title to **"Spotify Playlist"**, removed developer jargon ("Zero Spotify API Keys Required", "embed parsing", "developer accounts"), cleanly aligned the `(n) imported` tag beside the title, and replaced technical notes with user-friendly copy for production deployment.
   - *Guest Library Banner Update*: Changed top guest banner title across all library views from "Save Favorites & Cloud Library" to **"Sign In"** and removed the blue "Email Account" badge.
 
+- **Git Checkpoint: Phase 4**:
+  - Created rollback checkpoint tagged `phase-4` across root and frontend (`9206fa2`) git repositories.
+  - Encompasses Player & Queue fullscreen and hover menu enhancements, complete user database data purge on logout, unified UserButton styling across all pages, dynamic playlist poster adoption, strict Spotify playlist validation, direct song download to disk with client localStorage persistence, Spotify-matching square card sizing for albums and playlists on Search, and robust backend YouTube Music album and playlist resolvers.
+
 - **Player & Queue Enhancements**:
   - *Queue Drawer Z-Index & Fullscreen Integration*: Fixed the queue side window opening behind the fullscreen player ([ExpandedPlayer.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/ExpandedPlayer.tsx)). Raised [QueueDrawer.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/QueueDrawer.tsx) to `z-[70]` so it renders cleanly on top of `ExpandedPlayer` (`z-[60]`). Adjusted bottom offset dynamically (`bottom-0` when expanded, `bottom-20` in miniplayer view) and added an outside-click backdrop for seamless dismissal in fullscreen mode.
   - *Queue Sidebar 3-Dots Action Menu on Hover*: Integrated [SongActionMenu.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/ui/SongActionMenu.tsx) with `opacity-0 group-hover:opacity-100 transition-opacity` into both the "Now Playing" card and all "Up Next" track rows in [QueueDrawer.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/QueueDrawer.tsx). Users can hover over any song to play next, add to queue, save to playlist, toggle favorites, or remove from queue.
@@ -279,6 +283,10 @@ powershell -ExecutionPolicy Bypass -Command "npm run dev"
   - *Collection Detail View with Multiple Songs*: Resolved the issue on [/search](file:///c:/Projects/VibeMusic/frontend/src/app/search/page.tsx) where clicking an album or playlist card previously executed playback of track 0 without displaying the collection. Clicking any playlist or album card now calls `handleOpenCollection(item, 'playlist' | 'album')`, dynamically fetching all tracks via `/api/playlist/{browse_id}` or `/api/album/{browse_id}` and rendering a rich collection view.
   - *Collection View Features*: Includes a back button (`← Back to Albums / Playlists`), collection poster banner, badge indicator, author/artist metadata, release year, track count, "Play All", "Shuffle Play", and a complete tracks table featuring track indices, live equalizer animation for playing track, artwork thumbnail, clickable artist link to `ArtistModal`, track duration, favorite heart, and `SongActionMenu` (with direct song download, queue additions, and playlist saving).
   - *Identical Spotify-Matching Square Card Sizing*: Replaced the oversized 5-column square layout with the exact responsive grid and card sizing used for imported Spotify playlists in [library/page.tsx](file:///c:/Projects/VibeMusic/frontend/src/app/library/page.tsx): `grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4`, `p-3 rounded-2xl` card containers, `aspect-square rounded-xl` image covers with quick-play hover overlays, and compact typography (`text-xs sm:text-sm font-bold` titles and `text-[11px] text-neutral-400` subtitle info). Applied to both Albums and Playlists tabs.
+
+- **YouTube Music Album & Playlist Service Enhancements**:
+  - *Browse ID Resolution*: Added fallback resolution for `OLAK` and `VL` prefixed browse IDs in [yt_service.py](file:///c:/Projects/VibeMusic/backend/services/yt_service.py) to resolve full album metadata or fall back to playlist track lookup.
+  - *Candidate Search*: Intelligently tests alternative browse ID candidates when fetching playlists to prevent empty track listings.
 
 ---
 
