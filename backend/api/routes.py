@@ -432,3 +432,124 @@ async def stream_audio(video_id: str, request: Request, retry: int = 0, quality:
         status_code=remote_res.status_code,
         headers=resp_headers
     )
+
+
+# ====================== AUDIO DOWNLOAD ======================
+
+@router.get("/download/{video_id}")
+async def download_audio(
+    video_id: str,
+    request: Request,
+    filename: Optional[str] = None,
+    quality: str = "high"
+):
+    """
+    Direct audio download endpoint that forces a file download dialog in the user's browser,
+    saving the song to the user's drive with 'songname.extension'.
+    """
+    if video_id.startswith("sp_"):
+        clean_sp = video_id.replace("sp_", "").strip()
+        try:
+            from services import spotify_service
+            client = get_stream_client()
+            oembed_url = f"https://open.spotify.com/oembed?url=https://open.spotify.com/track/{clean_sp}"
+            oe = await client.get(oembed_url)
+            if oe.status_code == 200:
+                oe_title = oe.json().get("title", "")
+                resolved = await spotify_service.resolve_spotify_track_to_youtube(oe_title, "")
+                if resolved and resolved.get("videoId"):
+                    video_id = resolved["videoId"]
+        except Exception as e:
+            print(f"[download] Failed to resolve sp_ id {video_id}: {e}")
+
+    audio_cache_key = f"stream_info:{video_id}:{quality}"
+    cached_info = get_cache(audio_cache_key)
+
+    if not cached_info:
+        lock = await get_video_lock(f"{video_id}:{quality}")
+        async with lock:
+            cached_info = get_cache(audio_cache_key)
+            if not cached_info:
+                try:
+                    cached_info = await run_in_threadpool(yt_service.get_audio_stream_info, video_id, quality=quality)
+                    if cached_info and cached_info.get("url"):
+                        set_cache(audio_cache_key, cached_info, expire_seconds=14400)
+                except Exception as e:
+                    print(f"Failed to extract audio stream for download {video_id} ({quality}): {e}")
+                    raise HTTPException(status_code=500, detail="Could not extract audio stream for download")
+
+    if not cached_info or not cached_info.get("url"):
+        raise HTTPException(status_code=404, detail="Audio stream not found")
+
+    target_url = cached_info["url"]
+    headers = dict(cached_info.get("headers", {}))
+    headers.setdefault("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+    headers.setdefault("Accept", "*/*")
+
+    # Determine extension and format clean filename
+    raw_ext = (cached_info.get("ext") or "m4a").lower()
+    ext = "m4a" if raw_ext in ("mp4", "m4a") else raw_ext
+
+    if filename:
+        clean_name = filename.strip()
+    else:
+        title = cached_info.get("title") or f"song_{video_id}"
+        clean_name = f"{title}.{ext}"
+
+    # Remove illegal filesystem characters and normalize spaces
+    import re
+    from urllib.parse import quote
+    clean_name = re.sub(r'[\/\\?%*:|"<>;\r\n]', "", clean_name)
+    clean_name = re.sub(r'\s+', " ", clean_name).strip().rstrip('.')
+    if not clean_name:
+        clean_name = f"song_{video_id}.{ext}"
+
+    if not any(clean_name.lower().endswith(f".{e}") for e in ("m4a", "mp3", "webm", "ogg", "wav", "mp4")):
+        clean_name = f"{clean_name}.{ext}"
+
+    ascii_name = re.sub(r'[^\x20-\x7E]', '_', clean_name)
+    encoded_name = quote(clean_name, encoding="utf-8")
+    content_disposition = f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{encoded_name}'
+
+    client = get_stream_client()
+    try:
+        remote_req = client.build_request("GET", target_url, headers=headers)
+        remote_res = await client.send(remote_req, stream=True)
+
+        if remote_res.status_code in (403, 410):
+            await remote_res.aclose()
+            invalidate_cache(audio_cache_key)
+            fresh_info = await run_in_threadpool(yt_service.get_audio_stream_info, video_id, quality=quality)
+            if fresh_info and fresh_info.get("url"):
+                set_cache(audio_cache_key, fresh_info, expire_seconds=14400)
+                target_url = fresh_info["url"]
+                headers = dict(fresh_info.get("headers", {}))
+                remote_req = client.build_request("GET", target_url, headers=headers)
+                remote_res = await client.send(remote_req, stream=True)
+    except Exception as e:
+        print(f"Error connecting to download stream for {video_id}: {e}")
+        raise HTTPException(status_code=502, detail="Failed to connect to audio download stream")
+
+    async def stream_generator():
+        try:
+            async for chunk in remote_res.aiter_bytes(chunk_size=65536):
+                yield chunk
+        finally:
+            await remote_res.aclose()
+
+    mime_type = "audio/mp4" if ext == "m4a" else ("audio/webm" if ext == "webm" else (remote_res.headers.get("Content-Type") or "audio/mp4"))
+    resp_headers = {
+        "Content-Type": mime_type,
+        "Content-Disposition": content_disposition,
+        "Cache-Control": "public, max-age=86400",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Expose-Headers": "Content-Disposition, Content-Length",
+    }
+    if "Content-Length" in remote_res.headers:
+        resp_headers["Content-Length"] = remote_res.headers["Content-Length"]
+
+    return StreamingResponse(
+        stream_generator(),
+        status_code=remote_res.status_code,
+        headers=resp_headers
+    )

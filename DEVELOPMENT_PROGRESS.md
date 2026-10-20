@@ -268,6 +268,13 @@ powershell -ExecutionPolicy Bypass -Command "npm run dev"
   - *Backend Rejection for Invalid URLs*: Updated [spotify_service.py](file:///c:/Projects/VibeMusic/backend/services/spotify_service.py) to validate playlist IDs and inspect Spotify embed metadata. If a link points to an invalid/non-existent entity or contains 0 tracks, it raises an explicit 400 error (`"Invalid Spotify playlist URL. Please provide a valid link..."`), preventing empty or null playlists from being created.
   - *Store & Database Sanitization*: Added filter guards across [playerStore.ts](file:///c:/Projects/VibeMusic/frontend/src/store/playerStore.ts) (`initPersistedState` and `fetchUserLibrary`) and [db_service.py](file:///c:/Projects/VibeMusic/backend/services/db_service.py) to ignore and clean any legacy corrupted playlists named `"null"` or with invalid Spotify IDs.
 
+- **Direct Song Download Feature & Client LocalStorage Persistence**:
+  - *Direct Audio File Download to User's Drive*: Added `/api/download/{video_id}` in [backend/api/routes.py](file:///c:/Projects/VibeMusic/backend/api/routes.py) and [downloadService.ts](file:///c:/Projects/VibeMusic/frontend/src/lib/downloadService.ts). Streamed audio files trigger the browser's native file save dialog, saving directly to the user's computer drive with filename formatted as `<songname>.<extension>` (e.g., `Blinding Lights - The Weeknd.m4a`).
+  - *Bottom Placement in 3-Dots Action Menu*: Placed the "Download Song" option at the bottom of [SongActionMenu.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/ui/SongActionMenu.tsx) with a download icon and real-time loading spinner. Kept permanently accessible across all tracks on the website.
+  - *Pure Client LocalStorage (No Database Storage)*: Downloaded tracks are stored strictly in client-side `localStorage` under `vibemusic_library_v2` (`downloadedTracks`), ensuring zero database records are created or synced for downloaded files.
+  - *Bottom MiniPlayer & Fullscreen Player 3-Dots Access*: Integrated [SongActionMenu.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/ui/SongActionMenu.tsx) into [MiniPlayer.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/MiniPlayer.tsx) (next to the lyrics button) and [ExpandedPlayer.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/ExpandedPlayer.tsx) (next to the heart button) so users can download or access options for currently playing songs from anywhere.
+  - *Saved Offline Library Integration*: Downloaded tracks appear under the "Downloaded" tab in [library/page.tsx](file:///c:/Projects/VibeMusic/frontend/src/app/library/page.tsx) with instant 1-click offline playback and removal management.
+
 ---
 
 ## 4. Suggested Next Steps for Tomorrow
