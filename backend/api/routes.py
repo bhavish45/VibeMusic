@@ -35,26 +35,46 @@ async def get_video_lock(video_id: str) -> asyncio.Lock:
 
 
 # Helper to warm stream cache in background
-async def warm_tracks_cache(tracks: list):
-    for t in tracks[:5]:
+async def warm_tracks_cache(tracks: list, quality: str = "high"):
+    async def _warm_one(t: dict):
         vid = t.get("videoId")
-        if not vid:
-            continue
-        key = f"stream_info:{vid}"
-        if not get_cache(key):
+        if not vid or vid.startswith("sp_"):
+            return
+        if get_cache(f"stream_info:{vid}:{quality}") or get_cache(f"stream_info:{vid}"):
+            return
+        lock = await get_video_lock(f"{vid}:{quality}")
+        async with lock:
+            if get_cache(f"stream_info:{vid}:{quality}") or get_cache(f"stream_info:{vid}"):
+                return
             try:
-                info = await run_in_threadpool(yt_service.get_audio_stream_info, vid)
+                info = await run_in_threadpool(yt_service.get_audio_stream_info, vid, quality=quality)
                 if info and info.get("url"):
-                    set_cache(key, info, expire_seconds=14400)
+                    set_cache(f"stream_info:{vid}:{quality}", info, expire_seconds=14400)
+                    set_cache(f"stream_info:{vid}", info, expire_seconds=14400)
             except Exception:
                 pass
 
+    tasks = [_warm_one(t) for t in tracks[:6] if isinstance(t, dict)]
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+
+import re
+
+SAFE_ID_REGEX = re.compile(r'^[a-zA-Z0-9_\-:]{3,80}$')
+
+def validate_safe_id(raw_id: str, label: str = "ID") -> str:
+    clean = (raw_id or "").strip()
+    if not clean or not SAFE_ID_REGEX.match(clean):
+        raise HTTPException(status_code=400, detail=f"Invalid {label} format.")
+    return clean
 
 # ====================== SEARCH ======================
 
 @router.get("/search")
 def search(q: str = Query(..., min_length=1), filter: str = "songs"):
-    clean_q = q.strip()
+    clean_q = q[:250].strip()
     cache_key = f"search_v2:{clean_q}:{filter}"
     cached_result = get_cache(cache_key)
     if cached_result is not None:
@@ -69,7 +89,7 @@ def search(q: str = Query(..., min_length=1), filter: str = "songs"):
 def suggestions(q: str):
     if not q or not q.strip():
         return []
-    clean_q = q.strip()
+    clean_q = q[:150].strip()
     cache_key = f"sug:{clean_q}"
     cached_result = get_cache(cache_key)
     if cached_result is not None:
@@ -82,11 +102,12 @@ def suggestions(q: str):
 
 @router.get("/album/{browse_id}")
 async def get_album_endpoint(browse_id: str):
-    cache_key = f"album_v1:{browse_id}"
+    safe_browse_id = validate_safe_id(browse_id, "album ID")
+    cache_key = f"album_v1:{safe_browse_id}"
     cached = get_cache(cache_key)
     if cached is not None:
         return cached
-    data = await run_in_threadpool(yt_service.get_album_details, browse_id)
+    data = await run_in_threadpool(yt_service.get_album_details, safe_browse_id)
     if data and data.get("tracks"):
         set_cache(cache_key, data, expire_seconds=86400)
     return data
@@ -94,11 +115,12 @@ async def get_album_endpoint(browse_id: str):
 
 @router.get("/playlist/{browse_id}")
 async def get_playlist_endpoint(browse_id: str):
-    cache_key = f"playlist_v1:{browse_id}"
+    safe_browse_id = validate_safe_id(browse_id, "playlist ID")
+    cache_key = f"playlist_v1:{safe_browse_id}"
     cached = get_cache(cache_key)
     if cached is not None:
         return cached
-    data = await run_in_threadpool(yt_service.get_playlist_details, browse_id)
+    data = await run_in_threadpool(yt_service.get_playlist_details, safe_browse_id)
     if data and data.get("tracks"):
         set_cache(cache_key, data, expire_seconds=86400)
     return data
@@ -145,23 +167,25 @@ async def get_charts(country: str = "US", response: Response = None):
 # ====================== PRELOAD / WARM CACHE ======================
 
 @router.get("/preload/{video_id}")
-async def preload_audio(video_id: str):
+async def preload_audio(video_id: str, quality: str = "high"):
     """
     Lightweight endpoint to warm the audio stream cache for upcoming queue tracks.
     """
-    audio_cache_key = f"stream_info:{video_id}"
+    audio_cache_key = f"stream_info:{video_id}:{quality}"
     if get_cache(audio_cache_key):
         return {"status": "already_cached", "videoId": video_id}
 
     async def _warm():
-        lock = await get_video_lock(video_id)
+        lock = await get_video_lock(f"{video_id}:{quality}")
         async with lock:
             if get_cache(audio_cache_key):
                 return
             try:
-                info = await run_in_threadpool(yt_service.get_audio_stream_info, video_id)
+                info = await run_in_threadpool(yt_service.get_audio_stream_info, video_id, quality=quality)
                 if info and info.get("url"):
                     set_cache(audio_cache_key, info, expire_seconds=14400)
+                    # Also set quality-less key for fallback compatibility
+                    set_cache(f"stream_info:{video_id}", info, expire_seconds=14400)
             except Exception as e:
                 print(f"[preload] Failed to preload {video_id}: {e}")
 
@@ -173,26 +197,31 @@ async def preload_audio(video_id: str):
 async def preload_batch(request: Request):
     """
     Preloads multiple tracks in the background for instant transitions in queue.
+    Accepts optional 'quality' parameter for quality-aware cache warming.
     """
     try:
         body = await request.json()
         video_ids = body.get("video_ids", [])
+        quality = body.get("quality", "high")
     except Exception:
         video_ids = []
+        quality = "high"
 
     async def _warm_all():
-        for vid in video_ids[:6]:
+        for vid in video_ids[:8]:
             if not vid or vid.startswith("sp_"):
                 continue
-            key = f"stream_info:{vid}"
-            if not get_cache(key):
-                lock = await get_video_lock(vid)
+            key = f"stream_info:{vid}:{quality}"
+            fallback_key = f"stream_info:{vid}"
+            if not get_cache(key) and not get_cache(fallback_key):
+                lock = await get_video_lock(f"{vid}:{quality}")
                 async with lock:
-                    if not get_cache(key):
+                    if not get_cache(key) and not get_cache(fallback_key):
                         try:
-                            info = await run_in_threadpool(yt_service.get_audio_stream_info, vid)
+                            info = await run_in_threadpool(yt_service.get_audio_stream_info, vid, quality=quality)
                             if info and info.get("url"):
                                 set_cache(key, info, expire_seconds=14400)
+                                set_cache(fallback_key, info, expire_seconds=14400)
                         except Exception as e:
                             print(f"[preload-batch] Error warming {vid}: {e}")
 
@@ -245,12 +274,13 @@ async def get_song(video_id: str):
 
 @router.get("/lyrics/{video_id}")
 async def get_lyrics(video_id: str):
-    cache_key = f"lyrics:{video_id}"
+    safe_video_id = validate_safe_id(video_id, "video ID")
+    cache_key = f"lyrics:{safe_video_id}"
     cached_result = get_cache(cache_key)
     if cached_result is not None:
         return cached_result
 
-    data = await run_in_threadpool(yt_service.get_lyrics, video_id)
+    data = await run_in_threadpool(yt_service.get_lyrics, safe_video_id)
     result = {"lyrics": data}
     if data:
         set_cache(cache_key, result, expire_seconds=86400)
@@ -264,15 +294,16 @@ async def get_artist(
     browseId: Optional[str] = None, 
     background_tasks: BackgroundTasks = None
 ):
-    clean_q = artist_query.strip()
-    cache_key = f"artist_profile_v7:{clean_q.lower()}:{browseId or ''}"
+    clean_q = artist_query[:200].strip()
+    safe_browse_id = validate_safe_id(browseId, "artist browse ID") if browseId else None
+    cache_key = f"artist_profile_v7:{clean_q.lower()}:{safe_browse_id or ''}"
     cached_result = get_cache(cache_key)
     if cached_result is not None:
         if background_tasks and cached_result.get("songsBrowseId"):
             background_tasks.add_task(run_in_threadpool, yt_service.preload_artist_songs, cached_result["songsBrowseId"])
         return cached_result
 
-    data = await run_in_threadpool(yt_service.get_artist_profile, clean_q, browseId)
+    data = await run_in_threadpool(yt_service.get_artist_profile, clean_q, safe_browse_id)
     if data:
         data["isArtist"] = True
         set_cache(cache_key, data, expire_seconds=86400)
@@ -294,8 +325,9 @@ async def get_artist_more_songs_endpoint(
     offset: int = 0, 
     limit: int = 50
 ):
-    clean_q = artist_query.strip()
-    cache_key = f"artist_more_songs_v2:{clean_q.lower()}:{browseId or ''}:{offset}:{limit}"
+    clean_q = artist_query[:200].strip()
+    safe_browse_id = validate_safe_id(browseId, "artist browse ID") if browseId else None
+    cache_key = f"artist_more_songs_v2:{clean_q.lower()}:{safe_browse_id or ''}:{offset}:{limit}"
     cached_result = get_cache(cache_key)
     if cached_result is not None:
         return cached_result
@@ -303,7 +335,7 @@ async def get_artist_more_songs_endpoint(
     data = await run_in_threadpool(
         yt_service.get_artist_more_songs, 
         clean_q, 
-        browseId, 
+        safe_browse_id, 
         offset, 
         limit
     )
@@ -315,12 +347,13 @@ async def get_artist_more_songs_endpoint(
 
 @router.get("/radio/{video_id}")
 async def get_radio(video_id: str):
-    cache_key = f"radio:{video_id}"
+    safe_video_id = validate_safe_id(video_id, "video ID")
+    cache_key = f"radio:{safe_video_id}"
     cached_result = get_cache(cache_key)
     if cached_result:
         return cached_result
     
-    data = await run_in_threadpool(yt_service.get_watch_playlist, video_id)
+    data = await run_in_threadpool(yt_service.get_watch_playlist, safe_video_id)
     if data and data.get("tracks"):
         set_cache(cache_key, data, expire_seconds=7200)
     return data
@@ -335,6 +368,7 @@ async def stream_audio(video_id: str, request: Request, retry: int = 0, quality:
     Singleflight deduplication + connection pooling + automatic 403/410 recovery.
     Supports bitrate quality selection: high (320k), standard (160k), saver (96k).
     """
+    video_id = validate_safe_id(video_id, "video ID")
     if video_id.startswith("sp_"):
         clean_sp = video_id.replace("sp_", "").strip()
         try:
@@ -447,6 +481,7 @@ async def download_audio(
     Direct audio download endpoint that forces a file download dialog in the user's browser,
     saving the song to the user's drive with 'songname.extension'.
     """
+    video_id = validate_safe_id(video_id, "video ID")
     if video_id.startswith("sp_"):
         clean_sp = video_id.replace("sp_", "").strip()
         try:

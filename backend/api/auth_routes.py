@@ -67,10 +67,16 @@ def register(req: RegisterRequest):
     email = req.email.strip().lower()
     if not email or "@" not in email:
         raise HTTPException(status_code=400, detail="Invalid email address.")
+    if len(email) > 254:
+        raise HTTPException(status_code=400, detail="Email address is too long.")
     if len(req.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+    if len(req.password) > 128:
+        raise HTTPException(status_code=400, detail="Password must not exceed 128 characters.")
     if not req.displayName.strip():
         raise HTTPException(status_code=400, detail="Display name is required.")
+    if len(req.displayName.strip()) > 100:
+        raise HTTPException(status_code=400, detail="Display name must not exceed 100 characters.")
 
     existing = db_service.get_user_by_email(email)
     if existing:
@@ -92,6 +98,9 @@ def register(req: RegisterRequest):
 @auth_router.post("/login")
 def login(req: LoginRequest):
     email = req.email.strip().lower()
+    if len(email) > 254 or len(req.password) > 128:
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+
     user = db_service.get_user_by_email(email)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password.")

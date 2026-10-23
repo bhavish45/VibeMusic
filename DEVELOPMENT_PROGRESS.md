@@ -300,6 +300,14 @@ powershell -ExecutionPolicy Bypass -Command "npm run dev"
   - *Native Romanized LRCLIB Matching*: Updated [lyricsService.ts](file:///c:/Projects/VibeMusic/frontend/src/lib/lyricsService.ts) to query and prioritize the provider's authentic Romanized / English-letter synced versions (`track Romanized`, `track Romaji`, `cleanTitle + cleanArtist`).
   - *Zero Word-Translation / Preserved Lyric Fidelity*: Does not translate words into other meanings; preserves the authentic lyrics phonetically in English letters (e.g., `"मुझको इतना बताए कोई"` &rarr; `"Mujhko itna bataye koi"`).
   - *Perfect Audio Synchronization*: If LRCLIB provides synced LRC lines, uses them directly for millisecond-accurate highlighting and auto-scrolling. If plain Romanized lyrics exist, aligns them to base vocal timestamps using `alignLinesToTimestamps`. If no Romanized version exists, transliterates native script directly into English letters with 1:1 timestamps.
+- **Comprehensive Web Application Security Hardening**:
+  - *Next.js Production Security Headers ([next.config.ts](file:///c:/Projects/VibeMusic/frontend/next.config.ts))*: Added enterprise-grade security headers on all routes: `X-Content-Type-Options: nosniff` (MIME confusion protection), `X-Frame-Options: SAMEORIGIN` (clickjacking defense), `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload` (HSTS enforcement), `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (disables camera, microphone, geolocation, and payment hardware access), and `Cross-Origin-Opener-Policy: same-origin-allow-popups` (Spectre mitigation while permitting OAuth popups).
+  - *Framework Fingerprint Removal*: Configured `poweredByHeader: false` in Next.js, eliminating `X-Powered-By: Next.js` headers to prevent framework version enumeration.
+  - *FastAPI Backend Security Middleware ([main.py](file:///c:/Projects/VibeMusic/backend/main.py))*: Injected automated response security headers (`nosniff`, `SAMEORIGIN`, `strict-origin-when-cross-origin`, `X-XSS-Protection`) and obscured the `server` header (`VibeMusic-Gateway`).
+  - *Tiered Anti-Abuse Rate Limiting ([main.py](file:///c:/Projects/VibeMusic/backend/main.py))*: Built an in-memory sliding window rate limiter protecting `/api/auth/login` and `/api/auth/register` (max 15 req/min, brute-force mitigation), resource-heavy endpoints like `/api/spotify/import-url` and `/api/download` (max 30 req/min), while providing generous headroom (600 req/min) for search, streaming, and preloading to guarantee zero playback stutter.
+  - *CORS Hardening ([main.py](file:///c:/Projects/VibeMusic/backend/main.py))*: Replaced open wildcard regex with a scoped policy allowing localhost, private LAN ranges (`192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`), and verified Vercel/Railway production domains.
+  - *Strict Input Validation & Path Traversal Guards ([routes.py](file:///c:/Projects/VibeMusic/backend/api/routes.py) & [auth_routes.py](file:///c:/Projects/VibeMusic/backend/api/auth_routes.py))*: Added `validate_safe_id()` regex bounds on all path parameters (`video_id`, `browse_id`), capped search and artist query lengths, and bounded password and display name lengths (max 128 chars) to neutralize PBKDF2 hash exhaustion DoS attacks.
+  - *Health & Security Audit Endpoint*: Added `/api/health` providing real-time verification of active security defenses.
 - **MiniPlayer Visibility in Artist Profile**:
   - *Z-Index Hierarchy Normalization*: Adjusted [ArtistModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/ArtistModal.tsx) to `z-[60]` and elevated [MiniPlayer.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/MiniPlayer.tsx) to `z-[70]` so active playback controls float seamlessly at the bottom of the artist profile screen instead of being hidden behind it.
   - *Dynamic Bottom Anchoring*: Subscribed `MiniPlayer` to `activeArtistModal`. When any artist profile is open, the miniplayer automatically docks flush to `bottom-0` across all viewports (avoiding the mobile bottom navigation gap since `ArtistModal` covers the base tabs).
@@ -316,4 +324,24 @@ powershell -ExecutionPolicy Bypass -Command "npm run dev"
    - Add global keyboard handlers: spacebar for Play/Pause, `Shift+Right` for Next Track, `Shift+Left` for Previous Track, and `M` for Mute.
 4. **Equalizer & Audio Effects**:
    - Optional Web Audio API equalizer (Bass Boost, Treble, Vocal Clarity presets).
+
+---
+
+## 5. Production Security Deployment Checklist (For Later Implementation)
+
+When deploying VibeMusic publicly on the internet for broad production traffic, the following three edge and deployment measures should be implemented:
+
+1. **Free Cloudflare Proxy (Edge Protection & Volumetric DDoS Mitigation)**:
+   - Route custom domain traffic through Cloudflare's Free Plan proxy (orange-clouded DNS).
+   - Automatically absorbs Layer 3/4 volumetric network floods, SYN floods, and malicious scraping before requests ever hit the origin server.
+   - Provides free automated SSL/TLS termination, HTTP/3 support, and global edge caching for static assets.
+
+2. **Production Secrets & Environment Hardening**:
+   - Generate unique, high-entropy cryptographic secrets for production (`JWT_SECRET`, database passwords).
+   - Keep production credentials isolated within deployment environment variables (Vercel, Railway, or VPS environment managers) and maintain `.env` files strictly in `.gitignore`.
+
+3. **Email Verification (Bot & Spam Account Prevention)**:
+   - When opening user registration publicly, enable email confirmation flow (natively available in Supabase Auth or via transactional SMTP/Resend for SQLite auth).
+   - Prevents automated bot registrations and disposable spam emails from bloating database records.
+
 

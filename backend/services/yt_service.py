@@ -12,6 +12,8 @@ yt = YTMusic()
 
 # Optimized, high-performance yt-dlp configuration
 # Uses tv_embedded client for 100% reliability, no SABR URL-stripping, no player challenges
+# Optimized, high-performance yt-dlp configuration
+# Uses android & tv_embedded clients for instant extraction and 100% reliability
 FAST_YDL_OPTS = {
     "format": "140/251/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
     "quiet": True,
@@ -22,33 +24,50 @@ FAST_YDL_OPTS = {
     "youtube_include_hls_manifest": False,
     "extractor_args": {
         "youtube": {
-            "player_client": ["tv_embedded", "android", "web"]
+            "player_client": ["android", "tv_embedded"]
         }
     }
 }
 
-_shared_ydl = None
+_shared_ydls: dict[str, yt_dlp.YoutubeDL] = {}
 
-def get_shared_ydl():
-    global _shared_ydl
-    if _shared_ydl is None:
+def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
+    global _shared_ydls
+    clean_q = quality if quality in ("high", "standard", "saver") else "high"
+    if clean_q not in _shared_ydls:
+        if clean_q == "saver":
+            target_format = "249/250/worst[ext=m4a]/bestaudio[abr<=96]/bestaudio"
+        elif clean_q == "standard":
+            target_format = "140/bestaudio[abr<=160]/bestaudio"
+        else:
+            target_format = "140/251/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"
+
+        opts = {
+            "format": target_format,
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "nocheckcertificate": True,
+            "youtube_include_dash_manifest": False,
+            "youtube_include_hls_manifest": False,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android", "tv_embedded"]
+                }
+            }
+        }
         try:
-            _shared_ydl = yt_dlp.YoutubeDL(FAST_YDL_OPTS)
+            _shared_ydls[clean_q] = yt_dlp.YoutubeDL(opts)
         except Exception as e:
-            print(f"[yt-dlp] Warning creating primary shared ydl: {e}")
-            _shared_ydl = yt_dlp.YoutubeDL({
-                "format": "140/251/bestaudio/best",
+            print(f"[yt-dlp] Warning creating shared ydl ({clean_q}): {e}")
+            _shared_ydls[clean_q] = yt_dlp.YoutubeDL({
+                "format": "140/bestaudio/best",
                 "quiet": True,
                 "no_warnings": True,
                 "noplaylist": True,
-                "nocheckcertificate": True,
-                "extractor_args": {
-                    "youtube": {
-                        "player_client": ["tv_embedded"]
-                    }
-                }
+                "extractor_args": {"youtube": {"player_client": ["android", "tv_embedded"]}}
             })
-    return _shared_ydl
+    return _shared_ydls[clean_q]
 
 # ====================== HELPERS ======================
 
@@ -174,18 +193,8 @@ def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[st
         target_format = "140/251/bestaudio[abr>=160]/bestaudio/best"
         default_bitrate = 320
 
-    # Fast primary extraction
-    if quality == "high":
-        ydl = get_shared_ydl()
-    else:
-        ydl = yt_dlp.YoutubeDL({
-            "format": target_format,
-            "quiet": True,
-            "no_warnings": True,
-            "noplaylist": True,
-            "nocheckcertificate": True,
-            "extractor_args": {"youtube": {"player_client": ["tv_embedded", "android"]}}
-        })
+    # Fast primary extraction using shared pre-warmed instance
+    ydl = get_shared_ydl(quality)
 
     try:
         info = ydl.extract_info(url, download=False)

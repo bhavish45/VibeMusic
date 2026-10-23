@@ -51,18 +51,116 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="VibeMusic API", version="1.0.0", lifespan=lifespan)
 
-# CORS Configuration
+# ----------------- SECURITY & RATE LIMITING -----------------
+import time
+from collections import defaultdict
+from fastapi import Request
+from starlette.responses import JSONResponse
+
+# In-memory sliding-window request tracker for DDoS & brute-force mitigation
+_rate_limit_history: dict[str, list[tuple[float, str]]] = defaultdict(list)
+_last_cleanup_timestamp = time.time()
+
+def check_rate_limit(client_ip: str, path: str) -> tuple[bool, int]:
+    """
+    Tiered rate limiting:
+      - Auth brute-force defense (/api/auth/login, /api/auth/register): max 15 req/min
+      - Resource-heavy endpoints (/api/spotify/import-url, /api/download): max 30 req/min
+      - General playback & search endpoints: max 600 req/min (high headroom, zero user lag)
+    """
+    global _last_cleanup_timestamp
+    now = time.time()
+
+    # Periodic cleanup of expired records every 5 minutes
+    if now - _last_cleanup_timestamp > 300:
+        cutoff = now - 60.0
+        for ip in list(_rate_limit_history.keys()):
+            _rate_limit_history[ip] = [entry for entry in _rate_limit_history[ip] if entry[0] > cutoff]
+            if not _rate_limit_history[ip]:
+                del _rate_limit_history[ip]
+        _last_cleanup_timestamp = now
+
+    if path.startswith("/api/auth/login") or path.startswith("/api/auth/register"):
+        tier = "auth"
+        max_req = 15
+    elif path.startswith("/api/spotify/import-url") or path.startswith("/api/download"):
+        tier = "resource"
+        max_req = 30
+    else:
+        tier = "general"
+        max_req = 600
+
+    window = 60.0
+    cutoff = now - window
+    entries = [t for t, grp in _rate_limit_history[client_ip] if grp == tier and t > cutoff]
+
+    if len(entries) >= max_req:
+        earliest = min(entries)
+        retry_after = max(1, int(window - (now - earliest)))
+        return False, retry_after
+
+    _rate_limit_history[client_ip].append((now, tier))
+    return True, 0
+
+@app.middleware("http")
+async def security_and_rate_limiting_middleware(request: Request, call_next):
+    # 1. Skip preflight OPTIONS requests from rate limiting
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    path = request.url.path
+    if path.startswith("/api"):
+        client_ip = request.client.host if request.client else "127.0.0.1"
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            client_ip = forwarded.split(",")[0].strip()
+
+        allowed, retry_after = check_rate_limit(client_ip, path)
+        if not allowed:
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "error": "Too many requests. Please slow down.",
+                    "detail": "Rate limit exceeded for this endpoint.",
+                    "retry_after_seconds": retry_after
+                },
+                headers={
+                    "Retry-After": str(retry_after),
+                    "X-RateLimit-Limit": "Exceeded"
+                }
+            )
+
+    response = await call_next(request)
+
+    # 2. Hardened Security Headers
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+
+    # Remove or obscure backend server header to prevent banner grabbing
+    if "server" in response.headers:
+        response.headers["server"] = "VibeMusic-Gateway"
+
+    return response
+
+# ----------------- HARDENED CORS CONFIGURATION -----------------
 frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+allowed_origins = [
+    frontend_url,
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000"
+]
+
+# Allows localhost, LAN IPs (192.168.x.x, 10.x.x.x, 172.16-31.x.x), and production Vercel/Railway domains
+allowed_origin_regex = r"^https?://(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$|^https://.*\.vercel\.app$|^https://.*\.railway\.app$"
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        frontend_url,
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000"
-    ],
-    allow_origin_regex=r"https?://.*",
+    allow_origins=allowed_origins,
+    allow_origin_regex=allowed_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -77,3 +175,16 @@ app.include_router(routes.router, prefix="/api")
 @app.get("/")
 async def root():
     return {"message": "VibeMusic API is running", "status": "healthy"}
+
+@app.get("/api/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "security": {
+            "rate_limiting": "active",
+            "security_headers": "active",
+            "cors_policy": "restricted_origins_and_private_lan",
+            "sql_injection_defense": "parameterized_sqlite",
+            "password_hashing": "pbkdf2_hmac_sha256_100k"
+        }
+    }
