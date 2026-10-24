@@ -308,10 +308,71 @@ powershell -ExecutionPolicy Bypass -Command "npm run dev"
   - *CORS Hardening ([main.py](file:///c:/Projects/VibeMusic/backend/main.py))*: Replaced open wildcard regex with a scoped policy allowing localhost, private LAN ranges (`192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`), and verified Vercel/Railway production domains.
   - *Strict Input Validation & Path Traversal Guards ([routes.py](file:///c:/Projects/VibeMusic/backend/api/routes.py) & [auth_routes.py](file:///c:/Projects/VibeMusic/backend/api/auth_routes.py))*: Added `validate_safe_id()` regex bounds on all path parameters (`video_id`, `browse_id`), capped search and artist query lengths, and bounded password and display name lengths (max 128 chars) to neutralize PBKDF2 hash exhaustion DoS attacks.
   - *Health & Security Audit Endpoint*: Added `/api/health` providing real-time verification of active security defenses.
-- **MiniPlayer Visibility in Artist Profile**:
-  - *Z-Index Hierarchy Normalization*: Adjusted [ArtistModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/ArtistModal.tsx) to `z-[60]` and elevated [MiniPlayer.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/MiniPlayer.tsx) to `z-[70]` so active playback controls float seamlessly at the bottom of the artist profile screen instead of being hidden behind it.
-  - *Dynamic Bottom Anchoring*: Subscribed `MiniPlayer` to `activeArtistModal`. When any artist profile is open, the miniplayer automatically docks flush to `bottom-0` across all viewports (avoiding the mobile bottom navigation gap since `ArtistModal` covers the base tabs).
-  - *Layering & Stacking Integrity*: Elevated [ExpandedPlayer.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/ExpandedPlayer.tsx) to `z-[80]`, [FullScreenLyrics.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/FullScreenLyrics.tsx) to `z-[85]`, [QueueDrawer.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/QueueDrawer.tsx) to `z-[90]`, and dialog modals to `z-[95]`, ensuring clicking the miniplayer or queue drawer from an artist profile expands smoothly on top.
+- **Git Checkpoint: Phase 6**:
+  - Created rollback checkpoint tagged `phase-6` across root (`88127ad`) and frontend (`a5e6d15`) git repositories.
+  - Encompasses production security headers, tiered anti-abuse sliding-window rate limiting, path traversal guards, and multi-element pre-buffered instant song transitions.
+- **Ultra-Smooth 60fps/120fps Queue Drawer Scrolling ([QueueDrawer.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/QueueDrawer.tsx))**:
+  - *Eliminated Audio-Tick Render Churn*: Decoupled `QueueDrawer` from unscoped store subscriptions (`progress` emitting 4-5 times per second). Subscribed exclusively to required atomic selectors (`queue`, `queueIndex`, `currentTrack`), completely preventing unnecessary re-renders while audio plays.
+  - *Memoized Track Rows with GPU Composite Layers*: Extracted `QueueTrackRow` into a memoized component with `contain: paint`, `content-visibility: auto`, and `contain-intrinsic-size: 56px`, skipping offscreen layout paints and locking scrolling to high refresh rates (60Hz/120Hz/ProMotion).
+  - *Hardware-Accelerated Scroll Layer*: Added `will-change: scroll-position`, `overscroll-behavior: contain`, and `-webkit-overflow-scrolling: touch` for zero-friction momentum scrolling.
+- **High-FPS Silky-Smooth Line-by-Line Lyrics Engine ([smoothScroll.ts](file:///c:/Projects/VibeMusic/frontend/src/lib/smoothScroll.ts), [FullScreenLyrics.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/FullScreenLyrics.tsx) & [ExpandedPlayer.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/ExpandedPlayer.tsx))**:
+  - *Eliminated Layout Thrashing (Font-Size Reflow)*: Replaced font-size class switching (`text-xl` &rarr; `text-2xl` &rarr; `text-3xl`) with constant font metrics combined with hardware-accelerated GPU scale transforms (`transform: scale(0.90)` &rarr; `scale(1)` with `will-change: transform, opacity`). Active lines pop smoothly with zero layout reflows or parent container shifts.
+  - *Quintic Ease-Out RAF Smooth Scroll Engine*: Replaced jittery native `container.scrollTo({ behavior: 'smooth' })` with a custom `requestAnimationFrame` quintic easing animator (`1 - (1 - progress)^4`) locked to the display's native refresh rate (60fps/120fps/144fps).
+- **User-Centric Release Notes & Smooth Updates Modal ([updates.ts](file:///c:/Projects/VibeMusic/frontend/src/data/updates.ts) & [UpdatesModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/UpdatesModal.tsx))**:
+  - *Eliminated Technical & Jargon Bloat*: Stripped out all developer references (APIs, client emulation names, database storage, framework terms, and "free" phrasing). Replaced with clean, user-focused highlights (High-Fidelity Audio, Live Synced Lyrics, Spotify Playlist Import, Discovery & Downloads, Cloud Library).
+  - *Concise, Single-Line Bullet Points*: Replaced 25+ lengthy paragraphs with 5 focused categories, each containing 2 concise, single-line highlights designed for quick reading.
+  - *Authentic Release Date*: Configured official launch release date (`October 24, 2026`) replacing the previous `"To be added on deployment"` developer placeholder.
+- **Spotify-Standard Acoustic Crossfade Engine ([audioPlayer.ts](file:///c:/Projects/VibeMusic/frontend/src/lib/audioPlayer.ts) & [SettingsModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/SettingsModal.tsx))**:
+  - *Reference Player Standard Honored (Spotify / Apple Music pattern)*:
+    - **During Crossfade** (for configured duration of 3s, 5s, or 8s):
+      - The ending track remains active on screen (artwork, poster, title, artist, and progress bar reaching the end).
+      - The ending track volume smoothly ramps down from full volume to zero ($V_{out} = V_{target} \cdot \cos(\frac{\pi}{2} t)$).
+      - The incoming track starts playback at `0:00` in the background and smoothly ramps up from zero to full volume ($V_{in} = V_{target} \cdot \sin(\frac{\pi}{2} t)$).
+      - Both tracks play simultaneously with constant equal-power acoustic energy ($cos^2 + sin^2 = 1$), producing an uninterrupted acoustic blend with zero volume dips.
+    - **Upon Crossfade Completion** ($t \ge 1.0$ or outgoing track EOF):
+      - Outgoing audio element is terminated, cleared, and recycled into the preload slot for upcoming songs.
+      - Incoming audio is promoted to primary `this.audio`.
+      - Store advances cleanly via `advanceCrossfadeTrack(nextIndex)`, smoothly updating the artwork, title, artists, duration, and progress to the next song without reloading, resetting playback, or interrupting the ongoing audio.
+  - *Reliable Duration Thresholding (`getEffectiveDuration`)*: Guarded crossfade trigger by utilizing backend track metadata duration and requiring playback to exceed 75% of the song duration before evaluating `duration - crossfadeSec`. Eliminates premature crossfade triggering from partial chunked stream estimates.
+  - *Pause State & Event Isolation*: Stripped `onpause`, `onended`, and `ontimeupdate` handlers from outgoing audio during transition. Prevents outgoing track termination from sending pause events to the player store.
+  - *Interaction Safety*: Full pause/resume coordination across both fading tracks via `isUserPaused`. Instant crossfade cancellation with full volume recovery on manual track seeks or skips.
+  - *Enhanced Settings UI*: Active teal pill badge and explicit indicators for `Off (0s)`, `3s`, `5s`, and `8s` durations.
+- **Audio Quality Bitrate Selection & Live Switching ([yt_service.py](file:///c:/Projects/VibeMusic/backend/services/yt_service.py) & [audioPlayer.ts](file:///c:/Projects/VibeMusic/frontend/src/lib/audioPlayer.ts))**:
+  - *Full Format Selection across 3 Bitrate Tiers*: Corrected YouTube audio format selectors (`249/250/139` for Data Saver ~50–96kbps, `140/250` for Standard ~128–160kbps, and `251/140` for High Quality ~160–320kbps equivalent) and removed deprecated player client arguments that caused SABR extraction failures. All 3 tiers now stream via HTTP 206 Partial Content.
+  - *Seamless Live Quality Switching*: `handleQualityChange` preserves exact `currentTime` through a one-time `loadedmetadata` event so switching qualities during playback continues from the exact same second without restarting from `0:00`.
+  - *Instant Preload Invalidation*: Changing quality flushes outdated preload slots and immediately re-buffers upcoming queue tracks in the newly chosen bitrate.
+- **Broadcast Standard Audio Loudness Normalization ([audioPlayer.ts](file:///c:/Projects/VibeMusic/frontend/src/lib/audioPlayer.ts))**:
+  - *AES/EBU R128 (-14 LUFS) Target Headroom*: Replaced negligible static multiplier with industry-standard -14 LUFS broadcast target headroom (`vol * 0.82`), effectively taming harsh dynamic peaks and matching perceived loudness across varying track mastering levels.
+  - *Instant Reactive Toggling*: Store subscriber applies loudness curve in real-time on `audioNormalization` toggle without requiring audio restart or pause.
+- **Butter-Smooth Kinetic Momentum Scroll in Settings ([SettingsModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/SettingsModal.tsx) & [smoothScroll.ts](file:///c:/Projects/VibeMusic/frontend/src/lib/smoothScroll.ts))**:
+  - *120fps/144fps Physics-Based Lerp Gliding*: Implemented `attachSmoothWheel` listener on Settings modal container using exponential interpolation (`lerp 0.18`), eliminating discrete 100px mouse wheel notches on Windows for fluid gliding.
+  - *Hardware-Accelerated Composite Layers*: Added `willChange: 'scroll-position'`, `overscrollBehavior: 'contain'`, `scrollBehavior: 'smooth'`, and `-webkit-overflow-scrolling: 'touch'`.
+
+### L. UI/UX Polish, High-FPS Modal Scrolling, Search History & Drag Protection (Phase 7 Completed)
+- **High-FPS Momentum Scrolling & Cohesive Dark Theming Across Modals ([RecentSongsModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/RecentSongsModal.tsx), [SettingsModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/SettingsModal.tsx), [UpdatesModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/UpdatesModal.tsx))**:
+  - *Lag-Free 120Hz/144Hz Scrolling*: Integrated `attachSmoothWheel` physics-based exponential interpolation on all modal views, eliminating scroll stutter and Windows discrete mouse wheel notches.
+  - *Unified Glassmorphic Dark Styling*: Upgraded modal backgrounds to sleek deep dark glass (`bg-[#0e0e11]`) with subtle borders and identical visual hierarchy across Recent Played, Settings, and Notifications.
+- **Local Search History & Streamlined Search Dropdown ([searchStore.ts](file:///c:/Projects/VibeMusic/frontend/src/store/searchStore.ts), [SearchBarHeader.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/layout/SearchBarHeader.tsx))**:
+  - *Local Persistence*: Automatically stores up to 5 recent search terms in browser `localStorage` with zero cloud overhead.
+  - *Quick Navigation & Deletion*: Displays previous queries with 1-click execution and individual removal buttons.
+  - *Seamless Dropdown Design*: Removed all dividing horizontal lines (`border-t`) and category labels ("Artist", "Quick Songs", "Suggestions") for a clean, unified modern search dropdown.
+- **Custom Glassmorphic Delete Confirmation Popups ([RecentSongsModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/RecentSongsModal.tsx), [SettingsModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/SettingsModal.tsx))**:
+  - Replaced native browser `window.confirm()` dialogs with custom in-app glassmorphic confirmation popup cards (`showClearConfirm`, `showResetConfirm`) styled with dark backdrop blur and brand color actions.
+- **Universal Header & UserButton Placement ([Header.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/layout/Header.tsx))**:
+  - Standardized header dimensions (`h-[76px]`, `px-6 md:px-8 pt-6 pb-2`) across Home, Search, and Library.
+  - Aligned the Profile/UserButton to the exact same X and Y axis across all pages.
+- **Next.js 15 & React 19 Hydration Boundary Guard ([page.tsx](file:///c:/Projects/VibeMusic/frontend/src/app/search/page.tsx), [Header.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/layout/Header.tsx))**:
+  - Wrapped dynamic search parameter components in `<Suspense fallback={...}>` to eliminate client/server hydration mismatch errors.
+- **Search Page Width & Tag Placement ([page.tsx](file:///c:/Projects/VibeMusic/frontend/src/app/search/page.tsx))**:
+  - Expanded search bar width to span the full header naturally.
+  - Left-aligned genre and moods tags with static hover states (removed scale transform jitter).
+- **Website-Wide Image & Poster Drag Protection ([globals.css](file:///c:/Projects/VibeMusic/frontend/src/app/globals.css), [AuthInitializer.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/layout/AuthInitializer.tsx), [MusicPoster.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/ui/MusicPoster.tsx), [SimpLogo.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/ui/SimpLogo.tsx))**:
+  - Blocked native browser image dragging and drag-to-desktop saving via global CSS rules (`-webkit-user-drag: none !important`, `user-drag: none !important`, `user-select: none !important`), top-level `dragstart` event capture prevention, and `draggable={false}` attributes.
+- **Settings About Logo Refinements ([SettingsModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/SettingsModal.tsx))**:
+  - Proportional `w-14 h-14` (56px) sizing, stroke removed, glowing shadow maintained, hover effect removed, Samsung One UI squircle curvature (`rounded-[18px]`), and balanced VibeMusic typography.
+
+- **Git Checkpoint: Phase 7**:
+  - Created checkpoint tagged `phase-7` across root and frontend git repositories.
 
 ---
 

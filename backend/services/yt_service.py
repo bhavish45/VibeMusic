@@ -13,20 +13,14 @@ yt = YTMusic()
 # Optimized, high-performance yt-dlp configuration
 # Uses tv_embedded client for 100% reliability, no SABR URL-stripping, no player challenges
 # Optimized, high-performance yt-dlp configuration
-# Uses android & tv_embedded clients for instant extraction and 100% reliability
 FAST_YDL_OPTS = {
-    "format": "140/251/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
+    "format": "251/140/bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best",
     "quiet": True,
     "no_warnings": True,
     "noplaylist": True,
     "nocheckcertificate": True,
     "youtube_include_dash_manifest": False,
     "youtube_include_hls_manifest": False,
-    "extractor_args": {
-        "youtube": {
-            "player_client": ["android", "tv_embedded"]
-        }
-    }
 }
 
 _shared_ydls: dict[str, yt_dlp.YoutubeDL] = {}
@@ -36,11 +30,11 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
     clean_q = quality if quality in ("high", "standard", "saver") else "high"
     if clean_q not in _shared_ydls:
         if clean_q == "saver":
-            target_format = "249/250/worst[ext=m4a]/bestaudio[abr<=96]/bestaudio"
+            target_format = "249/250/139/bestaudio[abr<=96]/bestaudio/best"
         elif clean_q == "standard":
-            target_format = "140/bestaudio[abr<=160]/bestaudio"
+            target_format = "140/250/bestaudio[abr<=160]/bestaudio/best"
         else:
-            target_format = "140/251/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"
+            target_format = "251/140/bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best"
 
         opts = {
             "format": target_format,
@@ -50,11 +44,6 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
             "nocheckcertificate": True,
             "youtube_include_dash_manifest": False,
             "youtube_include_hls_manifest": False,
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android", "tv_embedded"]
-                }
-            }
         }
         try:
             _shared_ydls[clean_q] = yt_dlp.YoutubeDL(opts)
@@ -65,7 +54,7 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
                 "quiet": True,
                 "no_warnings": True,
                 "noplaylist": True,
-                "extractor_args": {"youtube": {"player_client": ["android", "tv_embedded"]}}
+                "nocheckcertificate": True,
             })
     return _shared_ydls[clean_q]
 
@@ -184,13 +173,13 @@ def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[st
     
     # Custom format selector per quality
     if quality == "saver":
-        target_format = "249/250/worst[ext=m4a]/bestaudio[abr<=96]/bestaudio"
+        target_format = "249/250/139/bestaudio[abr<=96]/bestaudio/best"
         default_bitrate = 96
     elif quality == "standard":
-        target_format = "140/bestaudio[abr<=160]/bestaudio"
+        target_format = "140/250/bestaudio[abr<=160]/bestaudio/best"
         default_bitrate = 160
     else:
-        target_format = "140/251/bestaudio[abr>=160]/bestaudio/best"
+        target_format = "251/140/bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best"
         default_bitrate = 320
 
     # Fast primary extraction using shared pre-warmed instance
@@ -206,39 +195,36 @@ def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[st
                 "duration": info.get("duration"),
                 "title": info.get("title"),
                 "quality": quality,
-                "client": "tv_embedded",
+                "client": "default",
                 "headers": dict(info.get("http_headers", {}))
             }
     except Exception as e:
         print(f"[yt-dlp] Primary extraction failed for {video_id} ({quality}): {e}")
 
-    # Fallback to secondary clients if primary fails
-    fallback_clients = [["android"], ["web"]]
-    for client in fallback_clients:
-        try:
-            opts = {
-                "format": target_format,
-                "quiet": True,
-                "no_warnings": True,
-                "noplaylist": True,
-                "nocheckcertificate": True,
-                "extractor_args": {"youtube": {"player_client": client}}
-            }
-            with yt_dlp.YoutubeDL(opts) as fallback_ydl:
-                info = fallback_ydl.extract_info(url, download=False)
-                if info and info.get("url"):
-                    return {
-                        "url": info["url"],
-                        "bitrate": info.get("abr") or info.get("tbr") or default_bitrate,
-                        "ext": info.get("ext", "m4a"),
-                        "duration": info.get("duration"),
-                        "title": info.get("title"),
-                        "quality": quality,
-                        "client": client[0],
-                        "headers": dict(info.get("http_headers", {}))
-                    }
-        except Exception:
-            continue
+    # Fallback to general formats if primary fails
+    try:
+        opts = {
+            "format": target_format,
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "nocheckcertificate": True,
+        }
+        with yt_dlp.YoutubeDL(opts) as fallback_ydl:
+            info = fallback_ydl.extract_info(url, download=False)
+            if info and info.get("url"):
+                return {
+                    "url": info["url"],
+                    "bitrate": info.get("abr") or info.get("tbr") or default_bitrate,
+                    "ext": info.get("ext", "m4a"),
+                    "duration": info.get("duration"),
+                    "title": info.get("title"),
+                    "quality": quality,
+                    "client": "fallback",
+                    "headers": dict(info.get("http_headers", {}))
+                }
+    except Exception as e:
+        print(f"[yt-dlp] Fallback extraction failed for {video_id}: {e}")
 
     return None
 
