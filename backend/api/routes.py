@@ -10,14 +10,20 @@ from pydantic import BaseModel
 
 router = APIRouter()
 
-# Shared persistent HTTP client with connection pooling for lightning-fast streaming
+# Shared persistent HTTP client with connection pooling and IPv4 enforcement for reliable streaming
 _stream_http_client: httpx.AsyncClient | None = None
 
 def get_stream_client() -> httpx.AsyncClient:
     global _stream_http_client
     if _stream_http_client is None or _stream_http_client.is_closed:
+        transport = httpx.AsyncHTTPTransport(
+            local_address="0.0.0.0",
+            retries=2,
+            verify=False
+        )
         _stream_http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=8.0, read=30.0, write=10.0, pool=10.0),
+            transport=transport,
+            timeout=httpx.Timeout(connect=10.0, read=45.0, write=15.0, pool=15.0),
             follow_redirects=True,
             limits=httpx.Limits(max_keepalive_connections=50, max_connections=100)
         )

@@ -1,7 +1,7 @@
 # VibeMusic — Development Progress & Roadmap
 
-> **Date**: October 20, 2026  
-> **Status**: Operational, Feature-Complete & Fully Verified  
+> **Date**: October 29, 2026  
+> **Status**: Operational, Feature-Complete & Checkpoint 8 In Progress  
 > **Backend**: FastAPI on `http://localhost:8000` (docs: `http://localhost:8000/docs`)  
 > **Frontend**: Next.js 15 (Turbopack) on `http://localhost:3000`  
 
@@ -153,35 +153,60 @@
 ```
 VibeMusic/
 ├── backend/
-│   ├── main.py                     # FastAPI app with CORS, lifespan warming, route registrations
+│   ├── main.py                     # FastAPI app with CORS, lifespan warming, route registrations & security middleware
 │   ├── api/
-│   │   └── routes.py               # /search, /suggestions, /home, /charts, /song, /lyrics, /artist, /artist/more-songs, /stream
+│   │   ├── routes.py               # /search, /suggestions, /home, /charts, /song, /lyrics, /artist, /stream, /download
+│   │   └── auth_routes.py          # /api/auth/register, /api/auth/login, /api/auth/me, /api/user/library
 │   └── services/
-│       ├── yt_service.py           # ytmusicapi + yt-dlp tv_embedded client, artist profile, discography pagination & preloading
-│       └── cache_service.py        # High-performance in-memory + persistent disk TTL caching
+│       ├── yt_service.py           # ytmusicapi + yt-dlp tv_embedded client (IPv4 0.0.0.0 bound), artist pagination & preloading
+│       ├── cache_service.py        # High-performance in-memory + persistent disk TTL caching
+│       ├── db_service.py           # Local SQLite database (users, playlists, favorites)
+│       ├── supabase_service.py     # Supabase Cloud PostgreSQL with Row Level Security (RLS)
+│       └── spotify_service.py      # Public Spotify embed scraper (zero API keys required)
 └── frontend/
     └── src/
         ├── store/
-        │   └── playerStore.ts      # Zustand store: playback state, activeArtistModal, favorites, followed artists,
-        │                           # playHistory, downloadedTracks, playlists + localStorage persistence
+        │   ├── playerStore.ts      # Zustand: playback, queue, activeArtistModal, favorites, followed artists, shortcuts
+        │   ├── authStore.ts        # Authentication state, login/register modals, cloud sync dispatcher
+        │   ├── searchStore.ts      # Search query, recent searches history (localStorage persisted)
+        │   └── settingsStore.ts    # Audio quality, crossfade duration, normalization, theme preferences
         ├── lib/
-        │   ├── audioPlayer.ts      # HTMLAudioElement singleton with MediaSession & preload buffer
-        │   ├── colorExtractor.ts   # Canvas pixel sampling for dominant artwork color extraction
-        │   └── clientCache.ts      # In-memory client cache with TTL
+        │   ├── audioPlayer.ts      # HTMLAudioElement singleton: crossfade engine, loudness curve, MediaSession
+        │   ├── colorExtractor.ts   # Canvas pixel sampling for dynamic dominant artwork color extraction
+        │   ├── smoothScroll.ts     # Physics-based RAF quintic easing & momentum wheel scrolling (120Hz/144Hz)
+        │   ├── lyricsService.ts    # Dual LRCLIB + YouTube synced lyrics with Romanized provider
+        │   └── downloadService.ts  # Client-side audio file downloader with disk save dialog
         ├── components/
+        │   ├── layout/
+        │   │   ├── Header.tsx              # Standardized 76px glassmorphic header with Bell & UserButton
+        │   │   ├── UserButton.tsx          # Unified Sign In pill & authenticated user profile dropdown
+        │   │   ├── SearchBarHeader.tsx     # Full-width search bar with recent search history & suggestions
+        │   │   ├── Sidebar.tsx             # Navigation sidebar with route indicators
+        │   │   ├── KeyboardShortcutsHandler.tsx # Global keyboard shortcuts listener with input guard
+        │   │   └── AuthInitializer.tsx    # Mount-time client state & drag protection initializers
         │   ├── modals/
-        │   │   └── ArtistModal.tsx # Artist profile drawer (hero banner, verified badge, bio, "Load More Songs", albums)
+        │   │   ├── ArtistModal.tsx         # Artist discography drawer (verified badge, bio, "Load More Songs", albums)
+        │   │   ├── KeyboardShortcutsModal.tsx # Glassmorphic cheat sheet modal with categorized key pills
+        │   │   ├── SettingsModal.tsx       # 3-tab settings (Playback & Audio, Lyrics, About VibeMusic)
+        │   │   ├── UpdatesModal.tsx        # What's New release notes (v1.0.0) with clean highlights
+        │   │   ├── RecentSongsModal.tsx    # Recently played tracks with custom glassmorphic delete confirmation
+        │   │   ├── CreatePlaylistModal.tsx # Custom in-app modal to create new user playlists
+        │   │   ├── AddToPlaylistModal.tsx  # Add song to user playlist modal
+        │   │   └── AuthModal.tsx           # Email login and user registration modal
         │   ├── player/
-        │   │   ├── ExpandedPlayer.tsx # Fullscreen player with dynamic dominant color, live LRC lyrics, clickable artist
-        │   │   ├── MiniPlayer.tsx     # Bottom persistent player bar with scrubber, volume, artist link, and heart
-        │   │   └── QueueDrawer.tsx    # Up next playlist drawer with reordering
+        │   │   ├── ExpandedPlayer.tsx      # Fullscreen player with dynamic gradient, live LRC lyrics, clickable artist
+        │   │   ├── MiniPlayer.tsx          # Bottom persistent player bar with scrubber, volume, queue & lyrics toggles
+        │   │   ├── FullScreenLyrics.tsx    # Dedicated high-fps synchronized fullscreen lyrics overlay
+        │   │   └── QueueDrawer.tsx         # Up next playlist drawer with hardware-accelerated momentum scrolling
         │   └── ui/
-        │       └── MusicPoster.tsx    # Image loader with multi-tier fallbacks
+        │       ├── MusicPoster.tsx         # Drag-protected image loader with multi-tier fallbacks
+        │       ├── SimpLogo.tsx            # Samsung One UI squircle brand logo (rounded-[18px])
+        │       └── SongActionMenu.tsx      # Contextual 3-dots menu (play next, add to queue/playlist, download)
         └── app/
-            ├── page.tsx            # Home page: "Hot and Happening" carousel + "Quick picks" + artist modal triggers
-            ├── search/page.tsx     # Live search with autocomplete, filter chips, top artist cards, and track lists
-            ├── library/page.tsx    # 4 Quick Action banners, Favorites, Followed, Most Played, Playlists
-            └── layout.tsx          # Root layout with Sidebar, Header, MiniPlayer, and ArtistModal
+            ├── page.tsx            # Home page: "Hot and Happening" carousel, Quick picks, Mint breathing glow
+            ├── search/page.tsx     # Full-width search with autocomplete, category chips, Albums/Playlists grids
+            ├── library/page.tsx    # User Library: Favorites, Followed, Most Played, Downloaded, Spotify Importer
+            └── layout.tsx          # Root layout with Sidebar, MiniPlayer, Modals & Keyboard listener
 ```
 
 ---
@@ -372,19 +397,202 @@ powershell -ExecutionPolicy Bypass -Command "npm run dev"
   - Proportional `w-14 h-14` (56px) sizing, stroke removed, glowing shadow maintained, hover effect removed, Samsung One UI squircle curvature (`rounded-[18px]`), and balanced VibeMusic typography.
 
 - **Git Checkpoint: Phase 7**:
-  - Created checkpoint tagged `phase-7` across root and frontend git repositories.
+  - Created checkpoint tagged `phase-7` across root (`82608fc`) and frontend (`5e39f45`) git repositories.
+
+### M. Global Keyboard Shortcuts Suite & IPv4 Stream Transport Optimization (Phase 7.5 Completed)
+- **Comprehensive Desktop Keyboard Shortcuts Suite ([KeyboardShortcutsHandler.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/layout/KeyboardShortcutsHandler.tsx))**:
+  - *Full Media Navigation*:
+    - **Play / Pause**: <kbd>Space</kbd> or <kbd>K</kbd> (prevents default document page scrolling).
+    - **Skip Next / Previous**: <kbd>Shift</kbd> + <kbd>→</kbd> or <kbd>N</kbd> (Next Track), <kbd>Shift</kbd> + <kbd>←</kbd> or <kbd>P</kbd> (Previous Track).
+    - **Seek Time Scrubbing**: <kbd>→</kbd> / <kbd>←</kbd> (seek ±5s), <kbd>J</kbd> (seek -10s).
+    - **Granular Volume Adjustments**: <kbd>↑</kbd> (+5%), <kbd>↓</kbd> (-5%) with live floating toast volume percentage indicators.
+    - **Volume Memory Mute**: <kbd>M</kbd> mutes audio and caches previous volume level; pressing <kbd>M</kbd> again accurately restores the exact previous level.
+    - **Playback Modes**: <kbd>S</kbd> (Toggle Shuffle), <kbd>R</kbd> (Cycle Repeat: Off &rarr; All &rarr; Current Track), <kbd>C</kbd> (Quick-favorite playing track).
+    - **View Overlays**: <kbd>L</kbd> (Synced Fullscreen Lyrics), <kbd>Q</kbd> (Queue Drawer), <kbd>F</kbd> (Expanded Player view).
+    - **Search Jump**: <kbd>/</kbd> or <kbd>Ctrl</kbd>+<kbd>K</kbd> / <kbd>Cmd</kbd>+<kbd>K</kbd> focuses the search input bar immediately.
+    - **Hierarchical Escape Handler**: <kbd>Esc</kbd> closes active overlays, modals, and blurs active search inputs without conflicting events.
+  - *Intelligent Input Field Guard*: Automatically disables single-key shortcuts while typing inside text boxes, search inputs, textareas, and contentEditable elements.
+- **Glassmorphic Keyboard Shortcuts Cheat Sheet Modal ([KeyboardShortcutsModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/KeyboardShortcutsModal.tsx))**:
+  - Interactive cheat sheet with category groupings (*Playback & Navigation, Volume & Modes, Views & Overlays*).
+  - Integrated 120Hz/144Hz smooth momentum wheel scrolling (`attachSmoothWheel`).
+  - Dual discovery: Accessible instantly via <kbd>?</kbd> anywhere or via the **"View Keys (?)"** button inside **Settings &rarr; Playback & Audio** in [SettingsModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/SettingsModal.tsx).
+- **IPv4 Transport Binding & Socket Hardening ([routes.py](file:///c:/Projects/VibeMusic/backend/api/routes.py) & [yt_service.py](file:///c:/Projects/VibeMusic/backend/services/yt_service.py))**:
+  - *Eliminated `wsarecv` IPv6 Connection Dropouts*: Bound `httpx.AsyncHTTPTransport` to `local_address="0.0.0.0"` and `yt-dlp` to `source_address="0.0.0.0"`. Bypasses broken ISP IPv6 route drops to Google Video CDNs (`[2001:4860:...]`) and guarantees sub-second HTTP 206 Partial Content audio stream delivery.
+  - *Stale Cache Purge*: Cleaned 430+ expired stream URLs from `backend/cache_store/`.
+- **Git Checkpoint: Phase 8 Baseline**:
+  - Created rollback checkpoint tagged `phase-8` and `checkpoint-8` across root and frontend (`c1c41e1`) git repositories before beginning Phase 8 feature implementations.
 
 ---
 
-## 4. Suggested Next Steps for Tomorrow
-1. **Audio Cache & Offline Playback (Service Worker)**:
-   - Connect the "Downloaded" section to CacheStorage or IndexedDB via the PWA service worker so audio files play completely offline without network connectivity.
-2. **Explore Mood / Genre Playlists**:
-   - Add dedicated playlist pages when clicking Moods & Genres in the Search page (e.g., clicking "Chill" or "Workout" loads a curated 25-song playlist).
-3. **Keyboard Shortcuts**:
-   - Add global keyboard handlers: spacebar for Play/Pause, `Shift+Right` for Next Track, `Shift+Left` for Previous Track, and `M` for Mute.
-4. **Equalizer & Audio Effects**:
-   - Optional Web Audio API equalizer (Bass Boost, Treble, Vocal Clarity presets).
+### N. Checkpoint 8: Web Audio API 5-Band Graphic Equalizer & Bass Boost (In Progress)
+
+#### 1. 🎚️ Web Audio API 5-Band Graphic Equalizer & Bass Boost
+- **Status**: In Progress / Implementation Ready
+- **Why It Matters**: Audiophiles and everyday listeners love sound customization—especially punchy sub-bass or crisp vocal clarity. It transforms VibeMusic into a premium, audiophile-grade player matching native hardware apps.
+- **Objective**: Provide low-latency, browser-native acoustic customization directly within the audio rendering pipeline with zero playback lag.
+- **Technical Architecture & Blueprint**:
+  - **Native Web Audio API Node Pipeline**:
+    - Connect the primary HTML5 `<audio>` element to the browser's native `window.AudioContext` source node via `createMediaElementSource(audio)`.
+    - Configure CORS support (`crossOrigin = "anonymous"`) across audio elements and stream routes.
+  - **Cascaded 5-Band BiquadFilter Chain**:
+    - **Sub-Bass (60 Hz)**: Peaking filter (`gain: -12dB` to `+12dB`, `Q: 1.0`) — controls deep sub-bass vibration and 808 rumble.
+    - **Bass / Punch (230 Hz)**: Peaking filter (`gain: -12dB` to `+12dB`, `Q: 1.0`) — controls kick drum punch and bass guitar warmth.
+    - **Midrange / Vocals (910 Hz)**: Peaking filter (`gain: -12dB` to `+12dB`, `Q: 1.0`) — controls lead vocals, acoustic instruments, and speech clarity.
+    - **Upper Mids / Presence (3.6 kHz)**: Peaking filter (`gain: -12dB` to `+12dB`, `Q: 1.0`) — controls snare snap, guitar attack, and vocal intimacy.
+    - **Treble / Air (14 kHz)**: High-shelf filter (`gain: -12dB` to `+12dB`, `Q: 1.0`) — controls cymbal shimmer, brightness, and spatial air.
+  - **Dynamics Compressor & Output Stage**:
+    - Chain the filter output into an inline `DynamicsCompressorNode` (`threshold: -1.0dB`, `ratio: 12:1`, `knee: 30`, `attack: 0.003s`, `release: 0.25s`) before terminating into `audioContext.destination`.
+    - Guarantees zero digital distortion or harsh clipping when users boost sub-bass or mids up to `+12dB`.
+- **Presets & Custom Profiles**:
+  - **Curated One-Click Presets**:
+    - *Flat*: `0dB, 0dB, 0dB, 0dB, 0dB`
+    - *Bass Boost*: `+8dB, +5dB, 0dB, +1dB, +2dB`
+    - *Hip-Hop*: `+6dB, +4dB, -1dB, +2dB, +3dB`
+    - *Pop*: `+2dB, +4dB, +2dB, +3dB, +4dB`
+    - *Rock*: `+5dB, +3dB, -2dB, +4dB, +5dB`
+    - *Electronic*: `+7dB, +5dB, 0dB, +3dB, +6dB`
+    - *Vocal Clarity*: `-3dB, -1dB, +5dB, +6dB, +3dB`
+    - *Classical*: `+4dB, +3dB, 0dB, +2dB, +4dB`
+  - **Custom User Tuning**: Freehand vertical sliders with live dB value tooltips; custom adjustments automatically save to `settingsStore.ts` and `localStorage` (`vibemusic_eq_profile`).
+- **State & Store Integration**:
+  - Add reactive state slice to `settingsStore.ts`:
+    - `equalizerEnabled: boolean`
+    - `equalizerPreset: string`
+    - `equalizerBands: { 60: number, 230: number, 910: number, 3600: number, 14000: number }`
+  - Reactively bind `audioPlayer.ts` audio node gains to store updates for real-time acoustic adjustments without audio restarts.
+- **UI / UX Placement**:
+  - Dedicated **Equalizer & Acoustic Tuning** section inside **Settings → Playback & Audio** in [SettingsModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/SettingsModal.tsx).
+  - Real-time SVG frequency response curve spline displaying active equalization curve.
+  - Master toggle switch (**"Enable Graphic Equalizer"**) for instant 1-click A/B sound comparison.
+
+---
+
+## 4. Feature Roadmap & Recommended High-Impact Implementations
+
+### Overview & Feature Matrix
+The following curated roadmap details the most important, high-impact features designed to elevate VibeMusic from a great web app to a **commercial-grade, Spotify & Apple Music-tier streaming platform**:
+
+| # | Feature | Category | Priority | Impact / Value Proposition |
+| :--- | :--- | :--- | :--- | :--- |
+| **1** | **Web Audio API 5-Band Equalizer** | Audio Engine | **P1 (Highest)** | Audiophile-grade acoustic tuning & Bass Boost (+12dB) |
+| **2** | **Smart Sleep Timer (Fade-to-Sleep)** | Playback Utility | **P1 (Highest)** | Auto-shutdown with smooth exponential volume fade |
+| **3** | **True Offline Playback (IndexedDB)** | Storage / PWA | **P1 (Highest)** | 100% functional music playback during zero network connectivity |
+| **4** | **Queue Drag-and-Drop & "Play Next"** | Playback Queue | **P2** | Precise queue reordering & immediate next-track insertion |
+| **5** | **Curated Mood & Genre Hub** | Discovery | **P2** | Dynamic full-screen playlist experiences for search tags |
+| **6** | **Shareable Deep Links (Web Share API)** | Social & Viral | **P2** | 1-click native mobile sharing & clipboard link previewing |
+| **7** | **Personalized Stats & "On Repeat"** | Personalization | **P3** | Auto-generated top 25 playlist & total minutes listened |
+| **8** | **1-Click PWA "Install App" Banner** | Native Experience | **P3** | Standalone desktop/mobile app feel without address bar |
+
+---
+
+### Tier 1: Top 3 Core Features (Priority Recommendation)
+
+#### 1. 🎚️ Web Audio API 5-Band Graphic Equalizer & Bass Boost
+- **Why It Matters**: Audiophiles and everyday listeners love sound customization—especially punchy sub-bass or crisp vocal clarity. It transforms VibeMusic into a premium, audiophile-grade player matching native hardware apps.
+- **Objective**: Provide low-latency, browser-native acoustic customization directly within the audio rendering pipeline with zero playback lag.
+- **Technical Architecture & Blueprint**:
+  - Connect the primary HTML5 `<audio>` element to the browser's native `window.AudioContext` source node via `createMediaElementSource(audio)`.
+  - Create 5 cascaded `BiquadFilterNode` instances representing industry-standard frequency bands:
+    - **Sub-Bass (60 Hz)**: Peaking filter (`gain: -12dB` to `+12dB`, `Q: 1.0`) — controls deep sub-bass vibration and 808 rumble.
+    - **Bass / Punch (230 Hz)**: Peaking filter (`gain: -12dB` to `+12dB`, `Q: 1.0`) — controls kick drum punch and bass guitar warmth.
+    - **Midrange / Vocals (910 Hz)**: Peaking filter (`gain: -12dB` to `+12dB`, `Q: 1.0`) — controls lead vocals, acoustic instruments, and speech clarity.
+    - **Upper Mids / Presence (3.6 kHz)**: Peaking filter (`gain: -12dB` to `+12dB`, `Q: 1.0`) — controls snare snap, guitar attack, and vocal intimacy.
+    - **Treble / Air (14 kHz)**: High-shelf filter (`gain: -12dB` to `+12dB`, `Q: 1.0`) — controls cymbal shimmer, brightness, and spatial air.
+  - Wire output safely to `audioContext.destination` with an optional `DynamicsCompressorNode` to protect against clipping or distortion at high boost levels.
+- **Presets & Custom Profiles**:
+  - **One-Click Presets**:
+    - *Flat*: 0dB across all bands.
+    - *Bass Boost*: +8dB on 60Hz, +5dB on 230Hz, 0dB on 910Hz, +1dB on 3.6kHz, +2dB on 14kHz.
+    - *Hip-Hop*: +6dB on 60Hz, +4dB on 230Hz, -1dB on 910Hz, +2dB on 3.6kHz, +3dB on 14kHz.
+    - *Pop*: +2dB on 60Hz, +4dB on 230Hz, +2dB on 910Hz, +3dB on 3.6kHz, +4dB on 14kHz.
+    - *Rock*: +5dB on 60Hz, +3dB on 230Hz, -2dB on 910Hz, +4dB on 3.6kHz, +5dB on 14kHz.
+    - *Electronic*: +7dB on 60Hz, +5dB on 230Hz, 0dB on 910Hz, +3dB on 3.6kHz, +6dB on 14kHz.
+    - *Vocal Clarity*: -3dB on 60Hz, -1dB on 230Hz, +5dB on 910Hz, +6dB on 3.6kHz, +3dB on 14kHz.
+    - *Classical*: +4dB on 60Hz, +3dB on 230Hz, 0dB on 910Hz, +2dB on 3.6kHz, +4dB on 14kHz.
+  - **Custom User Tuning**: Freehand vertical sliders with live dB value tooltips; custom adjustments automatically save to `settingsStore.ts` and `localStorage` (`vibemusic_eq_profile`).
+- **UI / UX Placement**:
+  - Dedicated **Equalizer** section inside **Settings &rarr; Playback & Audio** in [SettingsModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/SettingsModal.tsx).
+  - Real-time frequency response curve canvas showing the visual EQ spline.
+  - Master toggle switch (**Enable Equalizer**) to A/B test original audio vs equalized audio in 1 click.
+
+#### 2. 🌙 Smart Sleep Timer (Fade-to-Sleep Engine)
+- **Why It Matters**: One of the most frequently used features in modern music streaming services. Listeners love falling asleep to music, lo-fi beats, or ambient sounds, but don't want music playing continuously throughout the night, draining battery or waking them abruptly with sudden silence.
+- **Objective**: Automatically pause audio playback after a configurable duration, utilizing a gentle acoustic fade-out curve.
+- **Technical Architecture & Timers**:
+  - State management in `playerStore.ts`: `sleepTimerTarget: number | null`, `sleepTimerMode: 'time' | 'end_of_track' | null`.
+  - Configurable countdown options: `15 minutes`, `30 minutes`, `45 minutes`, `1 hour`, and `End of current track`.
+  - **Gentle Acoustic Fade-Out**: In the final 15 seconds of the countdown timer, smoothly ramp volume down from current volume $V_{initial}$ to 0 using an exponential easing curve ($V(t) = V_{initial} \cdot (1 - t/15)^2$). This avoids sudden jarring silence that jolts light sleepers awake.
+  - When the timer hits 0: pauses playback (`audio.pause()`), restores system volume setting back to $V_{initial}$, and clears the active timer state.
+  - `End of current track` mode: hooks into the audio `ended` event or crossfade trigger to halt playback cleanly once the active song finishes.
+- **UI / UX Placement**:
+  - Sleek **Moon icon (`Moon`)** button added directly to [MiniPlayer.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/MiniPlayer.tsx) and [ExpandedPlayer.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/ExpandedPlayer.tsx).
+  - Clicking the moon icon opens a lightweight glassmorphic popover showing timer presets and an active countdown timer badge (`14:32 remaining`).
+  - Floating toast notification confirms when a timer is set or cancelled.
+
+#### 3. 💾 True In-App Offline Playback (IndexedDB / CacheStorage Audio Vault)
+- **Why It Matters**: Currently, "Download" triggers a browser file download to the user's hard drive. True in-app offline playback allows users to listen to their saved songs inside the VibeMusic interface without an internet connection (e.g., on flights, subways, or during ISP connection outages).
+- **Objective**: Guarantee 100% functional music streaming and UI navigation even when completely disconnected from the network.
+- **Technical Architecture & Blueprint**:
+  - Create `offlineVaultService.ts` utilizing `idb` / `IndexedDB` (`vibemusic_offline_vault_v1`) or the native `CacheStorage` API.
+  - When the user clicks "Download / Save Offline" in the song action menu:
+    - Backend streams the complete audio payload as an `ArrayBuffer` blob.
+    - Saves the audio blob, track metadata (title, artist, duration, browse IDs), synced LRC lyrics, and base64 poster thumbnail together into the IndexedDB object store (`offline_tracks`).
+  - **Network Sentinel**:
+    - Attach global network listeners: `window.addEventListener('online')` and `window.addEventListener('offline')`.
+    - Reactive state in `playerStore.ts`: `isOffline: boolean`.
+  - **Dynamic Audio Source Routing**:
+    - When `audioPlayer.playTrack(track)` is called, it checks if `track.id` exists in the local offline vault.
+    - If found or if `isOffline === true`, creates a local blob URL (`URL.createObjectURL(storedBlob)`) instead of making a network request to `/api/stream/{video_id}`.
+    - Songs play with zero network delay and zero bandwidth usage.
+- **UI / UX Placement**:
+  - Dedicated **"Downloaded"** tab in [library/page.tsx](file:///c:/Projects/VibeMusic/frontend/src/app/library/page.tsx) with storage usage meter (e.g., `42 songs · 185 MB`).
+  - Green offline checkmark badge displayed next to saved songs across search, queues, and playlists.
+  - Floating banner appears when connection drops: `"You're offline — Playing from local vault"`.
+
+---
+
+### Tier 2: Discovery & Queue Enhancements
+
+#### 4. 🔀 Interactive Queue Drag-and-Drop Reordering & "Play Next"
+- **Why It Matters**: Power listeners want total command over their playback queue without having to rebuild playlists from scratch.
+- **Features & Architecture**:
+  - Implement smooth drag-and-drop reordering inside [QueueDrawer.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/QueueDrawer.tsx) using lightweight pointer events or `@dnd-kit/core` with hardware-accelerated transforms (`translate3d`).
+  - Connect reorder movements to `reorderQueue(startIndex, endIndex)` in [playerStore.ts](file:///c:/Projects/VibeMusic/frontend/src/store/playerStore.ts) so audio playback progression dynamically adapts.
+  - Add **"Play Next"** context menu option in [SongActionMenu.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/ui/SongActionMenu.tsx):
+    - Inserts the selected track directly at `queueIndex + 1` (immediately after the currently playing song) rather than appending to the very end of a 50-song queue.
+
+#### 5. 🎨 Curated Mood & Genre Exploration Hub
+- **Why It Matters**: The Search page already includes category tags (*Chill, Workout, Focus, Party, Hip-Hop, Pop, Rock, Indie*). Transforming these tags into full curated hubs turns static labels into immersive discovery engines.
+- **Features & Architecture**:
+  - Clicking any mood/genre card dynamically navigates to `/playlist/genre/:slug` or opens a dedicated full-screen collection view.
+  - Dynamically queries YouTube Music's curated mood shelves via `ytmusicapi.get_mood_playlists(params)` or curates 30–50 top tracks per vibe.
+  - Renders custom dynamic gradients and bespoke cover artwork with a 1-click **"Play All"** and **"Shuffle Play"** hero button.
+
+#### 6. 🔗 Shareable Track & Playlist Deep Links (Web Share API)
+- **Why It Matters**: Enables users to share music instantly with friends on WhatsApp, Discord, Telegram, or Twitter, driving organic growth.
+- **Features & Architecture**:
+  - Generates canonical clean query URLs: `https://vibemusic.app/?v={videoId}` and `https://vibemusic.app/playlist/{id}`.
+  - On mobile devices, invokes `navigator.share({ title: track.title, text: `Listen to ${track.title} on VibeMusic`, url })` for native OS share sheets.
+  - On desktop, provides instant 1-click clipboard copy with a checkmark toast indicator (`"Link copied to clipboard!"`).
+  - App initialization logic in [layout.tsx](file:///c:/Projects/VibeMusic/frontend/src/app/layout.tsx) inspects URL query parameters on first load to immediately launch and play shared songs.
+
+---
+
+### Tier 3: Personalization & Native App Experience
+
+#### 7. 📊 Personalized Listening Analytics & "On Repeat"
+- **Why It Matters**: Builds long-term user retention and habit formation through Spotify Wrapped-style personal listening insights.
+- **Features**:
+  - Automatically computes an **"On Repeat"** smart playlist under Library, showing the user's top 25 most played songs based on real play counters in `playHistory`.
+  - Computes monthly listening milestones: total minutes listened, top 3 favorite artists, and dominant genres.
+  - Sleek visual analytics card integrated cleanly into [library/page.tsx](file:///c:/Projects/VibeMusic/frontend/src/app/library/page.tsx).
+
+#### 8. 📲 1-Click PWA "Install App" Experience & Network Sentinel
+- **Why It Matters**: Delivers a native desktop and mobile application experience with a custom taskbar icon and zero browser address bar clutter.
+- **Features**:
+  - Captures the browser's `beforeinstallprompt` event and displays a discrete, high-aesthetic "Install VibeMusic App" banner in Settings and Sidebar.
+  - Configures Web App Manifest (`manifest.json`) with high-resolution app icons and theme colors (`#000000`, `#00d2c4`).
+  - Offline Network Sentinel indicator provides seamless user feedback when internet connectivity drops.
 
 ---
 

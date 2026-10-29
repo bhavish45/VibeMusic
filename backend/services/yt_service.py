@@ -21,6 +21,7 @@ FAST_YDL_OPTS = {
     "nocheckcertificate": True,
     "youtube_include_dash_manifest": False,
     "youtube_include_hls_manifest": False,
+    "source_address": "0.0.0.0",
 }
 
 _shared_ydls: dict[str, yt_dlp.YoutubeDL] = {}
@@ -44,6 +45,7 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
             "nocheckcertificate": True,
             "youtube_include_dash_manifest": False,
             "youtube_include_hls_manifest": False,
+            "source_address": "0.0.0.0",
         }
         try:
             _shared_ydls[clean_q] = yt_dlp.YoutubeDL(opts)
@@ -55,6 +57,7 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
                 "no_warnings": True,
                 "noplaylist": True,
                 "nocheckcertificate": True,
+                "source_address": "0.0.0.0",
             })
     return _shared_ydls[clean_q]
 
@@ -209,6 +212,7 @@ def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[st
             "no_warnings": True,
             "noplaylist": True,
             "nocheckcertificate": True,
+            "source_address": "0.0.0.0",
         }
         with yt_dlp.YoutubeDL(opts) as fallback_ydl:
             info = fallback_ydl.extract_info(url, download=False)
