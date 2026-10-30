@@ -447,6 +447,10 @@ powershell -ExecutionPolicy Bypass -Command "npm run dev"
   - **Dynamics Compressor & Output Stage**: Output routes into an inline `DynamicsCompressorNode` (`threshold: -1.0dB`, `ratio: 12:1`, `attack: 3ms`, `release: 250ms`) preventing digital clipping distortion during high boosts.
   - **Real-Time Interactive SVG Curve Spline**: Dynamic visual Catmull-Rom / cubic bezier curve visualizes frequency shaping with live pulsating node indicators.
   - **Master A/B Bypass & Zero-Click Ramping**: Toggling the equalizer smoothly ramps filter gains to 0 dB via `linearRampToValueAtTime`, providing 100% click-free instant A/B sound comparison.
+  - **Unified SVG Equalizer Slider Engine ([EqualizerControl.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/EqualizerControl.tsx))**:
+    - Replaced the previous separate response graph and separate vertical slider bank with a single, cohesive interactive SVG equalizer matching the website's signature lime-green/electric teal color (`#00d2c4` / `rgba(0, 210, 196, 0.16)`).
+    - Combines vertical slider tracks (`.eq-track`), zero-reference dashed line (`.zero-line`), active glowing stems (`.eq-stem`), soft gradient curve area fill (`.eq-area`), smooth continuous cubic bezier curve (`.eq-curve`), and draggable circular knobs (`.eq-knob`).
+    - Wide hit areas (`.eq-band-hit`) with pointer capture support smooth vertical touch and mouse dragging (`cursor: ns-resize`), live numeric dB readout badges, frequency center labels (60Hz, 230Hz, 910Hz, 3.6kHz, 14kHz), and keyboard arrow navigation.
 - **Full-Screen Settings Page Overhaul ([SettingsModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/SettingsModal.tsx))**:
   - *Eliminated Centered Card Modal & Backdrop Blur*: Replaced the floating popup dialog with a full-screen native page experience matching modern streaming applications.
   - *Clean Back Navigation (`< Settings`)*: Added a persistent top navigation bar with a responsive back button (`ChevronLeft`), large bold title, and top-right "Done" action button.
