@@ -447,6 +447,16 @@ powershell -ExecutionPolicy Bypass -Command "npm run dev"
   - **Dynamics Compressor & Output Stage**: Output routes into an inline `DynamicsCompressorNode` (`threshold: -1.0dB`, `ratio: 12:1`, `attack: 3ms`, `release: 250ms`) preventing digital clipping distortion during high boosts.
   - **Real-Time Interactive SVG Curve Spline**: Dynamic visual Catmull-Rom / cubic bezier curve visualizes frequency shaping with live pulsating node indicators.
   - **Master A/B Bypass & Zero-Click Ramping**: Toggling the equalizer smoothly ramps filter gains to 0 dB via `linearRampToValueAtTime`, providing 100% click-free instant A/B sound comparison.
+- **Full-Screen Settings Page Overhaul ([SettingsModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/SettingsModal.tsx))**:
+  - *Eliminated Centered Card Modal & Backdrop Blur*: Replaced the floating popup dialog with a full-screen native page experience matching modern streaming applications.
+  - *Clean Back Navigation (`< Settings`)*: Added a persistent top navigation bar with a responsive back button (`ChevronLeft`), large bold title, and top-right "Done" action button.
+  - *Unified Seamless View (Zero Tabs)*: Removed tab switching buttons ("Playback & Audio", "Lyrics", "About") and combined all settings into one smooth, scrollable view with high-FPS momentum scrolling (`attachSmoothWheel`).
+  - *Removed "About" Section*: Cleanly excised the third "About" section as requested.
+  - *Preserved All Core Preferences & Controls*:
+    - **Audio & Playback**: 3-tier Streaming Quality selector (High 320kbps, Standard 160kbps, Data Saver 96kbps), Audio Normalization toggle, Continuous Autoplay toggle, Crossfade duration selector (Off, 3s, 5s, 8s).
+    - **Graphic Equalizer**: Modular 5-band studio faders, real-time SVG response curve spline, and one-click genre presets.
+    - **Lyrics & Interface**: Auto-scroll Synced Lyrics toggle, English (Romanized) Lyrics toggle, Dynamic Artwork Tinting toggle.
+    - **System & Shortcuts**: Keyboard Shortcuts cheat sheet viewer button and Reset Preferences with custom confirmation dialog.
 - **Why It Matters**: Audiophiles and everyday listeners love sound customization—especially punchy sub-bass or crisp vocal clarity. It transforms VibeMusic into a premium, audiophile-grade player matching native hardware apps.
 - **Objective**: Provide low-latency, browser-native acoustic customization directly within the audio rendering pipeline with zero playback lag.
 - **Technical Architecture & Blueprint**:
