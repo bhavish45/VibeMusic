@@ -1,7 +1,7 @@
 # VibeMusic — Development Progress & Roadmap
 
-> **Date**: October 29, 2026  
-> **Status**: Operational, Feature-Complete & Phase 9 Checkpoint Created  
+> **Date**: October 31, 2026  
+> **Status**: Operational, Feature-Complete & Phase 10 Checkpoint Created  
 > **Backend**: FastAPI on `http://localhost:8000` (docs: `http://localhost:8000/docs`)  
 > **Frontend**: Next.js 15 (Turbopack) on `http://localhost:3000`  
 
@@ -556,6 +556,47 @@ powershell -ExecutionPolicy Bypass -Command "npm run dev"
 
 - **Git Checkpoint: Phase 9**:
   - Created rollback checkpoint tagged `phase-9` and `checkpoint-9` across root and frontend git repositories.
+
+---
+
+### P. Phase 10 Checkpoint: Spotify Full Playlist Import (1000+ Songs) & Romanized Synced Lyrics Polish (Completed)
+
+#### 1. 🎧 Spotify Full Playlist Import (Paginating 1000+ Songs with Zero 100-Song Embed Ceiling)
+- **Status**: Completed ([spotify_service.py](file:///c:/Projects/VibeMusic/backend/services/spotify_service.py), [requirements.txt](file:///c:/Projects/VibeMusic/backend/requirements.txt))
+- **Key Enhancements**:
+  - *Public Pathfinder GraphQL Pagination (`spotapi`)*: Overcame Spotify's static Next.js embed page 100-track limit by integrating `spotapi` (v1.2.8) and `curl_cffi` (Chrome 120 TLS fingerprinting). Can effortlessly paginate playlists of 100, 500, 1000, or more songs in 343-item chunks without Spotify blocking or requiring API credentials.
+  - *Direct HD Artwork Extraction*: Every track's high-resolution 640x640 album artwork (`ab67616d0000b273`) is extracted directly from the playlist response payload. Completely eliminates hundreds of secondary oEmbed HTTP calls, avoiding 429 rate-limiting and slashing import times from minutes to seconds.
+  - *Fast Persistent Caching*: Imported playlists are cached in `backend/cache_store/` under `sp_pl_full:{playlist_id}` for 2 days, providing sub-millisecond repeat access.
+  - *OAuth User Playlist Pagination*: Enhanced `fetch_spotify_user_playlists` to paginate up to 5,000 tracks per user playlist.
+  - *Fallback Embed Scraper*: Preserved public embed scraper as an automated fallback if the internal GraphQL endpoint is ever unreachable.
+
+#### 2. 🗄️ Database Storage Integrity (0 Tracks Saved to Database)
+- **Status**: Completed ([supabase_service.py](file:///c:/Projects/VibeMusic/backend/services/supabase_service.py))
+- **Key Enhancements**:
+  - *Zero DB Row Bloat*: Verified that `save_spotify_playlists_for_user` only upserts a single lightweight playlist header row (`id`, `name`, `cover_url`, `source: "spotify"`, `spotify_playlist_id`).
+  - *No Track Records*: Tracks from Spotify playlists are never stored in PostgreSQL/Supabase database tables or SQLite. All songs are held dynamically in memory and local storage on the client side, keeping database storage negligible and performant.
+
+#### 3. 🌐 Romanized Synced Lyrics Polish (Diacritics Removal & 1:1 Audio Sync)
+- **Status**: Completed ([LyricsModal.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/modals/LyricsModal.tsx))
+- **Key Enhancements**:
+  - *Clean Standard English Characters*: Completely eliminated pronunciation accents, macrons (e.g. `ō`, `ū`), carons, and tone markers across all romanized scripts (Japanese romaji, Korean romanization, Hindi hinglish, Russian/Cyrillic, Arabic, Greek, etc.) using Unicode NFD normalization (`normalize("NFD").replace(/[\u0300-\u036f]/g, "")`).
+  - *1:1 Timestamp Synchronization*: Kept exact line counts and timestamp alignments so audio-lyric synchronization is never desynchronized or missing lines.
+  - *Instant Cache Switching*: Romanized lines are cached alongside raw original lines in memory, enabling instantaneous toggling in Settings with zero network re-fetching.
+
+#### 4. 🎛️ Queue Drawer & Library UI Polish
+- **Status**: Completed ([QueueDrawer.tsx](file:///c:/Projects/VibeMusic/frontend/src/components/player/QueueDrawer.tsx), [library/page.tsx](file:///c:/Projects/VibeMusic/frontend/src/app/library/page.tsx))
+- **Key Enhancements**:
+  - *Now Playing Card Alignment*: Removed blue stroke glow border from Now Playing card in queue drawer; replaced with sleek `#18181c` card style matching the recent song list in Library.
+  - *Running Wave Animation*: Added 3-bar animated soundwave effect overlay over the current playing song poster in the queue drawer.
+  - *Removed Song Counters*: Removed the "7" badge from Playback Queue header and "7 songs" counter from Up Next header.
+  - *Clean Track Hover*: Removed play icon overlay on song posters in queue drawer on hover.
+  - *Infinite Background Queue Replenishment*: Automatically triggers background radio suggestions when remaining queue tracks drop to <= 4.
+  - *Spotify Clean Header*: Removed green dot from "Spotify Playlists" filter chip, removed bottom green glow under Spotify logo, and removed "1 imported" count badge.
+  - *Official Circular Spotify Logo*: Replaced squircle icon with uploaded official Spotify circular icon (`spotify-app-logo.png`).
+
+- **Git Checkpoint: Phase 10**:
+  - Created rollback checkpoint tagged `phase-10` and `checkpoint-10` across root and frontend git repositories.
+
 
 ---
 

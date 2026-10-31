@@ -10,3 +10,5 @@ python-dotenv>=1.0.0
 python-multipart>=0.0.6
 pyjwt>=2.8.0
 supabase>=2.0.0
+spotapi>=1.2.8
+curl_cffi>=0.7.0
