@@ -1135,6 +1135,40 @@ def get_artist_profile(query: str, browse_id_hint: Optional[str] = None) -> Opti
         if formatted_monthly and "listener" not in formatted_monthly.lower():
             formatted_monthly = f"{formatted_monthly} monthly listeners"
 
+        # Calculate genuine verified artist status
+        def _parse_count_metric(val: Any) -> int:
+            if not val:
+                return 0
+            t = str(val).strip().upper()
+            m = re.search(r'([\d\.,]+)\s*([KMB])?', t)
+            if not m:
+                return 0
+            num_str = m.group(1).replace(',', '')
+            try:
+                num = float(num_str)
+            except ValueError:
+                return 0
+            multiplier = m.group(2)
+            if multiplier == 'B':
+                return int(num * 1_000_000_000)
+            elif multiplier == 'M':
+                return int(num * 1_000_000)
+            elif multiplier == 'K':
+                return int(num * 1_000)
+            return int(num)
+
+        sub_metric = _parse_count_metric(subscribers)
+        monthly_metric = _parse_count_metric(monthly_listeners)
+        views_metric = _parse_count_metric(views)
+
+        # Verified if notable artist channel (50k+ subscribers, 50k+ monthly listeners, 1M+ views, or active official discography)
+        is_verified = bool(
+            sub_metric >= 50_000 or
+            monthly_metric >= 50_000 or
+            views_metric >= 1_000_000 or
+            (browse_id and len(albums) >= 2 and (sub_metric >= 10_000 or monthly_metric >= 10_000))
+        )
+
         return {
             "name": artist_name,
             "browseId": browse_id,
@@ -1146,6 +1180,7 @@ def get_artist_profile(query: str, browse_id_hint: Optional[str] = None) -> Opti
             "songsBrowseId": songs_browse_id,
             "hasMore": bool(total_songs_count > len(songs)),
             "totalSongs": total_songs_count,
+            "isVerified": is_verified,
             "songs": songs,
             "albums": albums
         }
