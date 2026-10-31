@@ -2,12 +2,57 @@ import os
 import re
 import json
 import asyncio
+import threading
+from concurrent.futures import ThreadPoolExecutor
 import urllib.parse
 import httpx
 from typing import Optional, Dict, Any, List
 from starlette.concurrency import run_in_threadpool
 from services import yt_service
 from services.cache_service import get_cache, set_cache
+
+# Persistent high-speed Pathfinder client singleton to avoid repeating 8s TLS/JS-pack handshakes
+_shared_spotapi_client = None
+_shared_spotapi_base = None
+_spotapi_lock = threading.Lock()
+_spotapi_warming = False
+
+def get_shared_spotapi_base():
+    global _shared_spotapi_client, _shared_spotapi_base
+    if _shared_spotapi_base is not None:
+        return _shared_spotapi_client, _shared_spotapi_base
+    with _spotapi_lock:
+        if _shared_spotapi_base is not None:
+            return _shared_spotapi_client, _shared_spotapi_base
+        try:
+            import spotapi
+            _shared_spotapi_client = spotapi.http.request.TLSClient("chrome120", "", auto_retries=3)
+            _shared_spotapi_base = spotapi.client.BaseClient(client=_shared_spotapi_client)
+        except Exception as e:
+            print(f"[Spotify] Could not create shared spotapi client: {e}")
+            return None, None
+        return _shared_spotapi_client, _shared_spotapi_base
+
+def warmup_spotapi():
+    global _spotapi_warming
+    if _spotapi_warming:
+        return
+    _spotapi_warming = True
+    try:
+        tls, base = get_shared_spotapi_base()
+        if base and tls:
+            import spotapi
+            p = spotapi.PublicPlaylist("37i9dQZF1DWXRqgorJj26U", client=tls)
+            p.base = base
+            _ = p.get_playlist_info(limit=1)
+            print("[Spotify] Pathfinder GraphQL API client pre-warmed successfully (0ms handshake for user imports).")
+    except Exception as e:
+        print(f"[Spotify] Pre-warmup notice: {e}")
+    finally:
+        _spotapi_warming = False
+
+# Kick off asynchronous background warm-up immediately so client is already ready before user ever pastes a link
+threading.Thread(target=warmup_spotapi, daemon=True).start()
 
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID", "")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "")
@@ -205,15 +250,29 @@ async def get_spotify_track_poster(sp_id: str) -> Optional[str]:
 
 def _fetch_via_spotapi(playlist_id: str) -> Optional[Dict[str, Any]]:
     """
-    High-speed pagination that fetches ALL tracks from any public Spotify playlist
+    Blazing-fast parallel pagination that fetches ALL tracks from any public Spotify playlist
     (whether 100, 500, or 1000+ tracks) without requiring any API keys or developer credentials.
+    Reuses pre-warmed session to eliminate 8s TLS handshakes and fetches multi-hundred song chunks in parallel.
     Extracts individual track HD album art directly from Spotify's response.
     """
+    global _shared_spotapi_base
     try:
         import spotapi
-        pp = spotapi.PublicPlaylist(playlist_id)
-        info = pp.get_playlist_info(limit=1)
-        pl_v2 = info.get("data", {}).get("playlistV2", {})
+
+        tls, base = get_shared_spotapi_base()
+        if tls and base:
+            pp = spotapi.PublicPlaylist(playlist_id, client=tls)
+            pp.base = base
+        else:
+            pp = spotapi.PublicPlaylist(playlist_id)
+
+        # 1. Fetch first chunk (up to 343 songs) and playlist metadata in ONE single call
+        UPPER_LIMIT = 343
+        first_resp = pp.get_playlist_info(limit=UPPER_LIMIT, offset=0)
+        pl_v2 = first_resp.get("data", {}).get("playlistV2", {})
+        if not pl_v2:
+            return None
+
         name = pl_v2.get("name") or "Spotify Playlist"
         desc = pl_v2.get("description") or ""
 
@@ -222,8 +281,29 @@ def _fetch_via_spotapi(playlist_id: str) -> Optional[Dict[str, Any]]:
         if images and images[0].get("sources"):
             cover_url = images[0]["sources"][0].get("url")
 
+        content = pl_v2.get("content", {})
+        total_count = content.get("totalCount", 0)
+
+        raw_chunks = [content]
+
+        # 2. If playlist has more than 343 tracks, fetch remaining chunks IN PARALLEL!
+        if total_count > UPPER_LIMIT:
+            remaining_offsets = list(range(UPPER_LIMIT, total_count, UPPER_LIMIT))
+            max_workers = min(6, len(remaining_offsets))
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [
+                    executor.submit(pp.get_playlist_info, limit=UPPER_LIMIT, offset=off)
+                    for off in remaining_offsets
+                ]
+                for fut in futures:
+                    resp = fut.result()
+                    c = resp.get("data", {}).get("playlistV2", {}).get("content", {})
+                    if c:
+                        raw_chunks.append(c)
+
+        # 3. Parse all tracks efficiently
         tracks: List[Dict[str, Any]] = []
-        for chunk in pp.paginate_playlist():
+        for chunk in raw_chunks:
             for item in chunk.get("items", []):
                 t_data = item.get("itemV2", {}).get("data", {})
                 if not t_data:
@@ -275,6 +355,8 @@ def _fetch_via_spotapi(playlist_id: str) -> Optional[Dict[str, Any]]:
             }
     except Exception as e:
         print(f"[Spotify] spotapi pagination error for {playlist_id}: {e}")
+        # Reset shared base on failure so next call re-authenticates cleanly
+        _shared_spotapi_base = None
     return None
 
 async def import_spotify_playlist_by_url(url_or_id: str) -> Dict[str, Any]:
