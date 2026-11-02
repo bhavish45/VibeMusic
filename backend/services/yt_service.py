@@ -11,8 +11,9 @@ from services.cache_service import get_cache, set_cache
 yt = YTMusic()
 
 # Optimized, high-performance yt-dlp configuration
+# Uses android and tv_embedded clients which completely bypass YouTube datacenter bot-checks
 FAST_YDL_OPTS = {
-    "format": "251/140/bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best",
+    "format": "140/251/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
     "quiet": True,
     "no_warnings": True,
     "noplaylist": True,
@@ -22,7 +23,7 @@ FAST_YDL_OPTS = {
     "source_address": "0.0.0.0",
     "extractor_args": {
         "youtube": {
-            "player_client": ["tv_embedded", "web_creator", "mweb", "android", "ios"]
+            "player_client": ["android", "tv_embedded"]
         }
     },
 }
@@ -34,11 +35,11 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
     clean_q = quality if quality in ("high", "standard", "saver") else "high"
     if clean_q not in _shared_ydls:
         if clean_q == "saver":
-            target_format = "249/250/139/bestaudio[abr<=96]/bestaudio/best"
+            target_format = "139/249/250/bestaudio[abr<=96]/bestaudio/best"
         elif clean_q == "standard":
             target_format = "140/250/bestaudio[abr<=160]/bestaudio/best"
         else:
-            target_format = "251/140/bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best"
+            target_format = "140/251/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"
 
         opts = {
             "format": target_format,
@@ -51,7 +52,7 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
             "source_address": "0.0.0.0",
             "extractor_args": {
                 "youtube": {
-                    "player_client": ["tv_embedded", "web_creator", "mweb", "android", "ios"]
+                    "player_client": ["android", "tv_embedded"]
                 }
             },
         }
@@ -68,7 +69,7 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
                 "source_address": "0.0.0.0",
                 "extractor_args": {
                     "youtube": {
-                        "player_client": ["tv_embedded", "web_creator", "mweb", "android", "ios"]
+                        "player_client": ["android", "tv_embedded"]
                     }
                 },
             })
@@ -189,13 +190,13 @@ def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[st
     
     # Custom format selector per quality
     if quality == "saver":
-        target_format = "249/250/139/bestaudio[abr<=96]/bestaudio/best"
+        target_format = "139/249/250/bestaudio[abr<=96]/bestaudio/best"
         default_bitrate = 96
     elif quality == "standard":
         target_format = "140/250/bestaudio[abr<=160]/bestaudio/best"
         default_bitrate = 160
     else:
-        target_format = "251/140/bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best"
+        target_format = "140/251/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"
         default_bitrate = 320
 
     # Fast primary extraction using shared pre-warmed instance
@@ -228,7 +229,7 @@ def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[st
             "source_address": "0.0.0.0",
             "extractor_args": {
                 "youtube": {
-                    "player_client": ["tv_embedded", "web_creator", "mweb", "android", "ios"]
+                    "player_client": ["android", "tv_embedded"]
                 }
             },
         }
