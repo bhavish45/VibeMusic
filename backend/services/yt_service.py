@@ -4,11 +4,52 @@ import re
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import os
 from typing import Optional, List, Dict, Any, Tuple
 from services.cache_service import get_cache, set_cache
 
 # ====================== INIT ======================
 yt = YTMusic()
+
+_cookie_file_path: Optional[str] = None
+
+def get_cookie_file_path() -> Optional[str]:
+    """
+    Retrieves or generates a cookies.txt file for yt-dlp authentication.
+    Supports YOUTUBE_COOKIES environment variable (for Render/Vercel) or local cookies.txt.
+    """
+    global _cookie_file_path
+    if _cookie_file_path and os.path.exists(_cookie_file_path):
+        return _cookie_file_path
+
+    # 1. Environment variable support for cloud deployment (Render, Railway, etc.)
+    raw_cookies = os.getenv("YOUTUBE_COOKIES", "").strip()
+    if raw_cookies:
+        temp_dir = os.path.dirname(os.path.abspath(__file__))
+        temp_file = os.path.join(temp_dir, "..", "youtube_cookies.txt")
+        try:
+            with open(temp_file, "w", encoding="utf-8") as f:
+                f.write(raw_cookies)
+            _cookie_file_path = temp_file
+            print("[yt-dlp] Authenticated using YOUTUBE_COOKIES environment variable.")
+            return _cookie_file_path
+        except Exception as e:
+            print(f"[yt-dlp] Warning writing YOUTUBE_COOKIES: {e}")
+
+    # 2. Local cookies.txt support
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(base_dir, "..", "cookies.txt"),
+        os.path.join(base_dir, "..", "youtube_cookies.txt"),
+        os.path.join(os.getcwd(), "cookies.txt"),
+    ]
+    for c in candidates:
+        if os.path.exists(c) and os.path.getsize(c) > 0:
+            _cookie_file_path = os.path.abspath(c)
+            print(f"[yt-dlp] Authenticated using local cookie file: {_cookie_file_path}")
+            return _cookie_file_path
+
+    return None
 
 # Optimized, high-performance yt-dlp configuration
 # Uses android and tv_embedded clients which completely bypass YouTube datacenter bot-checks
@@ -41,7 +82,7 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
         else:
             target_format = "140/251/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"
 
-        opts = {
+        opts: dict[str, Any] = {
             "format": target_format,
             "quiet": True,
             "no_warnings": True,
@@ -56,11 +97,15 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
                 }
             },
         }
+        cookie_path = get_cookie_file_path()
+        if cookie_path:
+            opts["cookiefile"] = cookie_path
+
         try:
             _shared_ydls[clean_q] = yt_dlp.YoutubeDL(opts)
         except Exception as e:
             print(f"[yt-dlp] Warning creating shared ydl ({clean_q}): {e}")
-            _shared_ydls[clean_q] = yt_dlp.YoutubeDL({
+            fallback_opts: dict[str, Any] = {
                 "format": "140/bestaudio/best",
                 "quiet": True,
                 "no_warnings": True,
@@ -72,7 +117,10 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
                         "player_client": ["android", "tv_embedded"]
                     }
                 },
-            })
+            }
+            if cookie_path:
+                fallback_opts["cookiefile"] = cookie_path
+            _shared_ydls[clean_q] = yt_dlp.YoutubeDL(fallback_opts)
     return _shared_ydls[clean_q]
 
 # ====================== HELPERS ======================
@@ -233,6 +281,9 @@ def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[st
                 }
             },
         }
+        cookie_path = get_cookie_file_path()
+        if cookie_path:
+            opts["cookiefile"] = cookie_path
         with yt_dlp.YoutubeDL(opts) as fallback_ydl:
             info = fallback_ydl.extract_info(url, download=False)
             if info and info.get("url"):

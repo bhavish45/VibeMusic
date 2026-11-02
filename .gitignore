@@ -5,6 +5,7 @@ backend/*/__pycache__/
 *.pyc
 .env
 backend/.env
+*cookies.txt
 scratch/
 
 # Frontend builds & dependencies
