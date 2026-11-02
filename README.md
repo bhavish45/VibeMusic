@@ -149,3 +149,4 @@ Open `http://localhost:3000` to start listening.
 
 ## 📄 License
 MIT License. Created with ❤️ for music listeners everywhere.
+
