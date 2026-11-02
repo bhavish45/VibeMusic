@@ -89,11 +89,12 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
             "noplaylist": True,
             "nocheckcertificate": True,
             "socket_timeout": 8,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android_vr", "web"]
+                }
+            }
         }
-        cookie_path = get_cookie_file_path()
-        if cookie_path:
-            opts["cookiefile"] = cookie_path
-
         try:
             _shared_ydls[clean_q] = yt_dlp.YoutubeDL(opts)
         except Exception as e:
@@ -106,8 +107,6 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
                 "nocheckcertificate": True,
                 "socket_timeout": 8,
             }
-            if cookie_path:
-                fallback_opts["cookiefile"] = cookie_path
             _shared_ydls[clean_q] = yt_dlp.YoutubeDL(fallback_opts)
     return _shared_ydls[clean_q]
 
