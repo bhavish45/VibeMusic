@@ -1,103 +1,102 @@
-# 🚀 VibeMusic Production Deployment Manual
+# 🌐 100% Free All-Time Hosting Guide for VibeMusic
 
-This guide contains everything you need to deploy VibeMusic to production (Frontend on **Vercel**, Backend on **Railway** or **Render**, and Database on **Supabase**).
+This guide walks you through deploying VibeMusic **100% free forever** with **zero credit card required**:
 
----
-
-## 📋 Pre-Flight Deployment Checklist
-
-Before starting deployment, confirm the following steps:
-
-- [x] **Zero TypeScript Errors**: Tested with `npx tsc --noEmit` across all components and pages.
-- [x] **Zero ESLint Errors**: Tested with `npm run lint` (`0 errors, 181 benign style warnings`).
-- [x] **Production Build Verified**: Successfully ran `npm run build` with all static pages prerendered.
-- [x] **Repository Cleaned**: Removed obsolete scratch scripts, legacy mockups (`ui/`), and untracked dynamic cache files.
-- [x] **Git Checkpoint Created**: Tagged `checkpoint-pre-deploy` and `phase-13-pre-deploy`.
+| Component | Platform | Free Tier Specifications | Cost |
+| :--- | :--- | :--- | :--- |
+| **Frontend** | **Vercel** | Unlimited deployments, 100GB bandwidth/mo, global edge CDN | **$0 / month** |
+| **Backend** | **Render** | Free Web Service (750 free hours/month = 24/7 coverage), Python 3.11 | **$0 / month** |
+| **Keep-Alive** | **cron-job.org** | Free HTTP pinger (pings `/api/health` every 10 min to keep Render awake) | **$0 / month** |
+| **Database** | **Supabase** | Free PostgreSQL, 500MB DB, 50,000 monthly active auth users | **$0 / month** |
 
 ---
 
-## ☁️ Step 1: Set Up Supabase Cloud Database (Free)
+## 🚀 Step 1: Set Up Free Database on Supabase (2 mins)
 
-If you haven't already created a Supabase project:
-
-1. Sign up or log in at [supabase.com](https://supabase.com/).
-2. Create a new project (e.g. `vibemusic-prod`).
-3. Under **SQL Editor**, paste the contents of [`supabase_schema.sql`](file:///c:/Projects/VibeMusic/supabase_schema.sql) and click **Run**.
-4. In **Project Settings > API**, copy:
-   - **Project URL** (e.g., `https://xyz.supabase.co`)
+1. Go to [supabase.com](https://supabase.com/) and sign up for free (using your GitHub account).
+2. Click **New Project** and name it `vibemusic`.
+3. In the left sidebar, click **SQL Editor > New Query**.
+4. Open [`supabase_schema.sql`](file:///c:/Projects/VibeMusic/supabase_schema.sql), copy everything, paste it into the Supabase SQL Editor, and click **Run**.
+5. Go to **Project Settings > API** and copy:
+   - **Project URL** (e.g. `https://your-id.supabase.co`)
    - **anon / public key**
-   - **service_role key** (keep secret!)
+   - **service_role key**
 
 ---
 
-## 🐍 Step 2: Deploy Backend to Railway
+## 🐍 Step 2: Deploy Backend on Render (100% Free Forever)
 
-Railway is the simplest and fastest platform for FastAPI + Python:
-
-1. Go to [railway.app](https://railway.app/) and sign in with GitHub.
-2. Click **New Project > Deploy from GitHub repo**.
-3. Select your `VibeMusic` repository.
-4. Go to **Settings > General**:
-   - Set **Root Directory** to `/backend`.
-5. Under **Variables**, add these environment variables:
+1. Go to [render.com](https://render.com/) and click **Get Started for Free** (Sign in with your GitHub).
+2. Click **New + > Web Service**.
+3. Choose **Build and deploy from a Git repository** and select your `VibeMusic` repository.
+4. Fill in the details:
+   - **Name**: `vibemusic-backend`
+   - **Region**: Choose closest to you (e.g., *Singapore*, *Frankfurt*, or *Oregon*)
+   - **Root Directory**: `backend`
+   - **Runtime**: `Python 3`
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+   - **Instance Type**: Select **Free** ($0/month)
+5. Under **Environment Variables**, add:
    ```env
-   PORT=8000
+   PORT=10000
    ENVIRONMENT=production
-   CORS_ORIGINS=https://your-frontend-domain.vercel.app,http://localhost:3000
-   SUPABASE_URL=https://your-project.supabase.co
+   SUPABASE_URL=https://your-id.supabase.co
    SUPABASE_KEY=your-supabase-service-role-or-anon-key
-   JWT_SECRET=generate-a-strong-random-32-char-string
+   JWT_SECRET=any-long-random-string-like-abc123xyz789
    ```
-6. Under **Settings > Networking > Public Networking**:
-   - Click **Generate Domain**.
-   - Note down the generated domain (e.g. `https://vibemusic-backend.up.railway.app`).
-7. Test the deployment:
-   - Open `https://vibemusic-backend.up.railway.app/docs` in your browser.
-   - If the FastAPI Swagger docs appear, your backend is live!
+6. Click **Create Web Service**.
+7. Render will build the environment and provide you with a free URL:
+   `https://vibemusic-backend.onrender.com`
+8. Verify it works: Visit `https://vibemusic-backend.onrender.com/api/health` in your browser. It should show:
+   ```json
+   {"status":"healthy"}
+   ```
 
 ---
 
-## ⚡ Step 3: Deploy Frontend to Vercel
+## ⏰ Step 3: Keep Backend Awake 24/7 (100% Free Trick)
+
+Render's free tier goes to sleep after 15 minutes of no visitors. To prevent it from sleeping and ensure instant playback 24/7:
+
+1. Go to [cron-job.org](https://cron-job.org/) (or [uptimerobot.com](https://uptimerobot.com/)) and create a free account.
+2. Click **Create Cronjob**.
+3. Set the URL to:
+   ```
+   https://vibemusic-backend.onrender.com/api/health
+   ```
+4. Schedule: **Every 10 minutes**.
+5. Save the job!
+> **Result**: Render will receive a tiny 1-millisecond ping every 10 minutes, keeping your music server awake and responsive all the time for $0.
+
+---
+
+## ⚡ Step 4: Deploy Frontend on Vercel (100% Free Forever)
 
 1. Go to [vercel.com](https://vercel.com/) and sign in with GitHub.
 2. Click **Add New... > Project**.
 3. Select your `VibeMusic` repository.
-4. In the project configuration:
-   - **Root Directory**: Click *Edit* and select `frontend`.
-   - **Framework Preset**: *Next.js* (auto-detected).
-   - **Build Command**: `next build --turbopack` (default).
-5. Open the **Environment Variables** accordion and add:
-   | Key | Value | Description |
-   | :--- | :--- | :--- |
-   | `NEXT_PUBLIC_API_URL` | `https://vibemusic-backend.up.railway.app` | Your Railway backend URL |
-   | `NEXT_PUBLIC_SUPABASE_URL` | `https://your-project.supabase.co` | Your Supabase project URL |
-   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `your-supabase-anon-key` | Your Supabase public key |
+4. In the setup panel:
+   - **Root Directory**: Click **Edit** and choose `frontend`.
+   - **Framework Preset**: Next.js (automatically detected).
+5. Open the **Environment Variables** section and add:
+   | Name | Value |
+   | :--- | :--- |
+   | `NEXT_PUBLIC_API_URL` | `https://vibemusic-backend.onrender.com` |
+   | `NEXT_PUBLIC_SUPABASE_URL` | `https://your-id.supabase.co` |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `your-supabase-anon-key` |
 6. Click **Deploy**.
-7. Once the build finishes, Vercel gives you a production URL (e.g. `https://vibemusic.vercel.app`).
+7. In ~60 seconds, your site is live at:
+   `https://vibemusic.vercel.app` (or your chosen project name).
 
 ---
 
-## 🔄 Step 4: Final Wire-up (CORS Update)
+## 🎧 Step 5: Test Your Live App
 
-Now that you have your live Vercel URL:
+1. Open your Vercel URL on your phone or desktop.
+2. Try **Search** &mdash; search any song or artist.
+3. Tap **Play** &mdash; audio will stream via your live Render backend.
+4. Open **Lyrics** &mdash; live synced word-by-word lyrics will animate.
+5. Click **Sign In** &mdash; test registration or login with Supabase Cloud.
 
-1. Return to your **Railway** backend project.
-2. Go to **Variables > CORS_ORIGINS**.
-3. Update the value to include your production Vercel domain:
-   ```env
-   CORS_ORIGINS=https://vibemusic.vercel.app,https://your-custom-domain.com
-   ```
-4. Railway will automatically redeploy the backend in ~10 seconds.
-
----
-
-## 📱 Step 5: Test Live Application
-
-1. Open your Vercel URL in your browser.
-2. Test **Search**: Search for any artist or track (e.g. "Blinding Lights").
-3. Test **Audio Playback**: Click Play and verify audio streams smoothly.
-4. Test **Lyrics**: Expand player and open synced lyrics.
-5. Test **Library & Auth**: Click "Sign In", create an account or log in, and test saving a track to favorites.
-6. Test **PWA**: Look for the "Install App" button in Chrome/Safari/Edge to test progressive web app installation.
-
-🎉 **Your VibeMusic platform is now live for listeners worldwide!**
+Enjoy your 100% free, 24/7 music streaming platform!
