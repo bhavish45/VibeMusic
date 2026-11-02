@@ -11,8 +11,6 @@ from services.cache_service import get_cache, set_cache
 yt = YTMusic()
 
 # Optimized, high-performance yt-dlp configuration
-# Uses tv_embedded client for 100% reliability, no SABR URL-stripping, no player challenges
-# Optimized, high-performance yt-dlp configuration
 FAST_YDL_OPTS = {
     "format": "251/140/bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best",
     "quiet": True,
@@ -22,6 +20,11 @@ FAST_YDL_OPTS = {
     "youtube_include_dash_manifest": False,
     "youtube_include_hls_manifest": False,
     "source_address": "0.0.0.0",
+    "extractor_args": {
+        "youtube": {
+            "player_client": ["tv_embedded", "web_creator", "mweb", "android", "ios"]
+        }
+    },
 }
 
 _shared_ydls: dict[str, yt_dlp.YoutubeDL] = {}
@@ -46,6 +49,11 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
             "youtube_include_dash_manifest": False,
             "youtube_include_hls_manifest": False,
             "source_address": "0.0.0.0",
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["tv_embedded", "web_creator", "mweb", "android", "ios"]
+                }
+            },
         }
         try:
             _shared_ydls[clean_q] = yt_dlp.YoutubeDL(opts)
@@ -58,6 +66,11 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
                 "noplaylist": True,
                 "nocheckcertificate": True,
                 "source_address": "0.0.0.0",
+                "extractor_args": {
+                    "youtube": {
+                        "player_client": ["tv_embedded", "web_creator", "mweb", "android", "ios"]
+                    }
+                },
             })
     return _shared_ydls[clean_q]
 
@@ -213,6 +226,11 @@ def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[st
             "noplaylist": True,
             "nocheckcertificate": True,
             "source_address": "0.0.0.0",
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["tv_embedded", "web_creator", "mweb", "android", "ios"]
+                }
+            },
         }
         with yt_dlp.YoutubeDL(opts) as fallback_ydl:
             info = fallback_ydl.extract_info(url, download=False)
