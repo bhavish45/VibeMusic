@@ -5,6 +5,8 @@ from services import yt_service
 from services.cache_service import get_cache, set_cache, invalidate_cache
 import httpx
 import asyncio
+import os
+import time
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 
@@ -370,20 +372,40 @@ async def get_radio(video_id: str):
 async def test_stream(video_id: str):
     """Diagnostic endpoint to verify audio stream extraction on Render."""
     safe_id = validate_safe_id(video_id, "video ID")
+    start_time = time.time()
+    cookie_env = bool(os.getenv("YOUTUBE_COOKIES"))
+    cookie_path = yt_service.get_cookie_file_path()
+
+    diagnostic = {
+        "videoId": safe_id,
+        "cookie_env_set": cookie_env,
+        "cookie_file_path": cookie_path,
+        "cookie_file_exists": bool(cookie_path and os.path.exists(cookie_path)),
+        "cookie_file_bytes": os.path.getsize(cookie_path) if cookie_path and os.path.exists(cookie_path) else 0,
+    }
+
     try:
-        info = await run_in_threadpool(yt_service.get_audio_stream_info, safe_id)
-        if not info or not info.get("url"):
-            return {"status": "error", "detail": "No stream URL returned"}
-        return {
-            "status": "success",
-            "videoId": safe_id,
-            "title": info.get("title"),
-            "bitrate": info.get("bitrate"),
-            "client": info.get("client"),
-            "url_preview": info["url"][:80] + "..."
-        }
+        info = await asyncio.wait_for(
+            run_in_threadpool(yt_service.get_audio_stream_info, safe_id),
+            timeout=20.0
+        )
+        diagnostic["status"] = "success"
+        diagnostic["title"] = info.get("title")
+        diagnostic["bitrate"] = info.get("bitrate")
+        diagnostic["client"] = info.get("client")
+        diagnostic["url_preview"] = info.get("url", "")[:80] + "..." if info.get("url") else None
+        diagnostic["elapsed_seconds"] = round(time.time() - start_time, 2)
+        return diagnostic
+    except asyncio.TimeoutError:
+        diagnostic["status"] = "timeout"
+        diagnostic["error"] = "Extraction exceeded 20 second safety limit"
+        diagnostic["elapsed_seconds"] = round(time.time() - start_time, 2)
+        return diagnostic
     except Exception as e:
-        return {"status": "error", "detail": str(e)}
+        diagnostic["status"] = "error"
+        diagnostic["error"] = str(e)
+        diagnostic["elapsed_seconds"] = round(time.time() - start_time, 2)
+        return diagnostic
 
 @router.get("/stream/{video_id}")
 async def stream_audio(video_id: str, request: Request, retry: int = 0, quality: str = "high"):
