@@ -25,6 +25,11 @@ def get_cookie_file_path() -> Optional[str]:
     # 1. Environment variable support for cloud deployment (Render, Railway, etc.)
     raw_cookies = os.getenv("YOUTUBE_COOKIES", "").strip()
     if raw_cookies:
+        # Strip any accidental prefix like 'YOUTUBE_COOKIES' from copy-paste
+        if "Netscape HTTP Cookie File" in raw_cookies:
+            idx = raw_cookies.find("# Netscape HTTP Cookie File")
+            if idx != -1:
+                raw_cookies = raw_cookies[idx:]
         temp_dir = os.path.dirname(os.path.abspath(__file__))
         temp_file = os.path.join(temp_dir, "..", "youtube_cookies.txt")
         try:
@@ -58,7 +63,6 @@ FAST_YDL_OPTS = {
     "no_warnings": True,
     "noplaylist": True,
     "nocheckcertificate": True,
-    "source_address": "0.0.0.0",
 }
 
 _shared_ydls: dict[str, yt_dlp.YoutubeDL] = {}
@@ -80,7 +84,6 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
             "no_warnings": True,
             "noplaylist": True,
             "nocheckcertificate": True,
-            "source_address": "0.0.0.0",
         }
         cookie_path = get_cookie_file_path()
         if cookie_path:
@@ -96,7 +99,6 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
                 "no_warnings": True,
                 "noplaylist": True,
                 "nocheckcertificate": True,
-                "source_address": "0.0.0.0",
             }
             if cookie_path:
                 fallback_opts["cookiefile"] = cookie_path
@@ -246,7 +248,7 @@ def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[st
     except Exception as e:
         print(f"[yt-dlp] Primary extraction failed for {video_id} ({quality}): {e}")
 
-    # Fallback to general formats if primary fails
+    # Fallback 1: Direct fallback with cookies if available
     try:
         opts = {
             "format": target_format,
@@ -254,7 +256,6 @@ def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[st
             "no_warnings": True,
             "noplaylist": True,
             "nocheckcertificate": True,
-            "source_address": "0.0.0.0",
         }
         cookie_path = get_cookie_file_path()
         if cookie_path:
@@ -274,6 +275,36 @@ def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[st
                 }
     except Exception as e:
         print(f"[yt-dlp] Fallback extraction failed for {video_id}: {e}")
+
+    # Fallback 2: Clean unauthenticated extraction without cookies (bypasses bad/expired cookie sessions)
+    try:
+        no_cookie_opts = {
+            "format": target_format,
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "nocheckcertificate": True,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android_vr", "web"]
+                }
+            }
+        }
+        with yt_dlp.YoutubeDL(no_cookie_opts) as clean_ydl:
+            info = clean_ydl.extract_info(url, download=False)
+            if info and info.get("url"):
+                return {
+                    "url": info["url"],
+                    "bitrate": info.get("abr") or info.get("tbr") or default_bitrate,
+                    "ext": info.get("ext", "m4a"),
+                    "duration": info.get("duration"),
+                    "title": info.get("title"),
+                    "quality": quality,
+                    "client": "unauth_fallback",
+                    "headers": dict(info.get("http_headers", {}))
+                }
+    except Exception as e:
+        print(f"[yt-dlp] Unauthenticated fallback extraction failed for {video_id}: {e}")
 
     return None
 

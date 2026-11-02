@@ -17,7 +17,6 @@ def get_stream_client() -> httpx.AsyncClient:
     global _stream_http_client
     if _stream_http_client is None or _stream_http_client.is_closed:
         transport = httpx.AsyncHTTPTransport(
-            local_address="0.0.0.0",
             retries=2,
             verify=False
         )
@@ -366,6 +365,25 @@ async def get_radio(video_id: str):
 
 
 # ====================== STREAM PROXY ======================
+
+@router.get("/test-stream/{video_id}")
+async def test_stream(video_id: str):
+    """Diagnostic endpoint to verify audio stream extraction on Render."""
+    safe_id = validate_safe_id(video_id, "video ID")
+    try:
+        info = await run_in_threadpool(yt_service.get_audio_stream_info, safe_id)
+        if not info or not info.get("url"):
+            return {"status": "error", "detail": "No stream URL returned"}
+        return {
+            "status": "success",
+            "videoId": safe_id,
+            "title": info.get("title"),
+            "bitrate": info.get("bitrate"),
+            "client": info.get("client"),
+            "url_preview": info["url"][:80] + "..."
+        }
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
 
 @router.get("/stream/{video_id}")
 async def stream_audio(video_id: str, request: Request, retry: int = 0, quality: str = "high"):
