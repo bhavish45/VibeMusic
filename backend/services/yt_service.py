@@ -52,21 +52,13 @@ def get_cookie_file_path() -> Optional[str]:
     return None
 
 # Optimized, high-performance yt-dlp configuration
-# Uses android and tv_embedded clients which completely bypass YouTube datacenter bot-checks
 FAST_YDL_OPTS = {
-    "format": "140/251/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
+    "format": "bestaudio/best",
     "quiet": True,
     "no_warnings": True,
     "noplaylist": True,
     "nocheckcertificate": True,
-    "youtube_include_dash_manifest": False,
-    "youtube_include_hls_manifest": False,
     "source_address": "0.0.0.0",
-    "extractor_args": {
-        "youtube": {
-            "player_client": ["android", "tv_embedded"]
-        }
-    },
 }
 
 _shared_ydls: dict[str, yt_dlp.YoutubeDL] = {}
@@ -80,7 +72,7 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
         elif clean_q == "standard":
             target_format = "140/250/bestaudio[abr<=160]/bestaudio/best"
         else:
-            target_format = "140/251/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"
+            target_format = "bestaudio/best"
 
         opts: dict[str, Any] = {
             "format": target_format,
@@ -88,14 +80,7 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
             "no_warnings": True,
             "noplaylist": True,
             "nocheckcertificate": True,
-            "youtube_include_dash_manifest": False,
-            "youtube_include_hls_manifest": False,
             "source_address": "0.0.0.0",
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android", "tv_embedded"]
-                }
-            },
         }
         cookie_path = get_cookie_file_path()
         if cookie_path:
@@ -106,17 +91,12 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
         except Exception as e:
             print(f"[yt-dlp] Warning creating shared ydl ({clean_q}): {e}")
             fallback_opts: dict[str, Any] = {
-                "format": "140/bestaudio/best",
+                "format": "bestaudio/best",
                 "quiet": True,
                 "no_warnings": True,
                 "noplaylist": True,
                 "nocheckcertificate": True,
                 "source_address": "0.0.0.0",
-                "extractor_args": {
-                    "youtube": {
-                        "player_client": ["android", "tv_embedded"]
-                    }
-                },
             }
             if cookie_path:
                 fallback_opts["cookiefile"] = cookie_path
@@ -275,11 +255,6 @@ def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[st
             "noplaylist": True,
             "nocheckcertificate": True,
             "source_address": "0.0.0.0",
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android", "tv_embedded"]
-                }
-            },
         }
         cookie_path = get_cookie_file_path()
         if cookie_path:
