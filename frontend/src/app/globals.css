@@ -1,0 +1,126 @@
+@import "tailwindcss";
+
+:root {
+  --background-primary: #000000;
+  --background-secondary: #121214;
+  --background-tertiary: #202024;
+  --surface-elevated: #18181c;
+  --text-primary: #ffffff;
+  --text-secondary: #9e9ea7;
+  --text-tertiary: #606066;
+  --accent: #00d2c4;
+  --accent-hover: #06b6d4;
+  --success: #22c55e;
+  --danger: #ef4444;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+}
+
+@theme inline {
+  --color-bg-primary: var(--background-primary);
+  --color-bg-secondary: var(--background-secondary);
+  --color-bg-tertiary: var(--background-tertiary);
+  --color-surface: var(--surface-elevated);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --color-border-subtle: var(--border-subtle);
+  
+  --font-sans: var(--font-geist-sans), Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: #000000;
+  color: #ffffff;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* Globally disable native image/file dragging across the entire application */
+*,
+*::before,
+*::after {
+  -webkit-user-drag: none;
+}
+
+img,
+picture,
+svg,
+video,
+canvas {
+  -webkit-user-drag: none !important;
+  -khtml-user-drag: none !important;
+  -moz-user-drag: none !important;
+  -o-user-drag: none !important;
+  user-drag: none !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2a30;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #40404a;
+}
+
+/* Hide scrollbar utility */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Soundwave bar animation */
+@keyframes soundwave {
+  0%, 100% { height: 4px; }
+  50% { height: 16px; }
+}
+
+.animate-wave-1 {
+  animation: soundwave 0.8s ease-in-out infinite;
+}
+.animate-wave-2 {
+  animation: soundwave 0.8s ease-in-out 0.2s infinite;
+}
+.animate-wave-3 {
+  animation: soundwave 0.8s ease-in-out 0.4s infinite;
+}
+
+/* Smooth running marquee text for long song titles */
+@keyframes marquee-running {
+  0%, 18% {
+    transform: translateX(0px);
+  }
+  82%, 100% {
+    transform: translateX(var(--marquee-distance, -40px));
+  }
+}
+
+.animate-marquee-running {
+  display: inline-block;
+  white-space: nowrap;
+  animation: marquee-running var(--marquee-duration, 8s) cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+}
+
+
+
