@@ -412,8 +412,8 @@ async def test_stream(video_id: str):
 @router.get("/stream/{video_id}")
 def stream(video_id: str, request: Request, retry: int = 0, quality: str = "high"):
     """
-    Direct audio proxy through Cloudflare WARP.
-    Extracts stream with yt-dlp using SOCKS5 proxy, then pipes chunks via requests.
+    Direct audio proxy with multi-strategy failover (Clean Android/iOS -> Cookies -> Cloudflare WARP).
+    Extracts stream without geoblocking, then pipes audio chunks with full HTTP Range (206) support.
     """
     video_id = validate_safe_id(video_id, "video ID")
     if video_id.startswith("sp_"):
@@ -433,33 +433,46 @@ def stream(video_id: str, request: Request, retry: int = 0, quality: str = "high
     # Use cached audio URL if recent to enable instant range scrubbing
     cache_key = f"stream_target_url:{video_id}"
     target_audio_url = None if retry > 0 else get_cache(cache_key)
+    used_proxy = None
 
     if not target_audio_url:
         url = f"https://www.youtube.com/watch?v={video_id}"
-        try:
-            with yt_dlp.YoutubeDL(yt_service.ydl_opts()) as ydl:
-                info = ydl.extract_info(url, download=False)
-        except Exception as e:
-            print(f"[stream] Primary extraction failed for {video_id}: {e}. Retrying with clean unauthenticated client...")
+        attempts = [
+            {"proxy": None, "use_cookies": False, "name": "direct_clean"},
+            {"proxy": None, "use_cookies": True, "name": "direct_cookies"},
+        ]
+        if yt_service.is_warp_proxy_available() or os.name != "nt":
+            attempts.append({"proxy": "socks5://127.0.0.1:1080", "use_cookies": False, "name": "warp_clean"})
+            attempts.append({"proxy": "socks5://127.0.0.1:1080", "use_cookies": True, "name": "warp_cookies"})
+
+        info = None
+        successful_attempt = None
+        last_error = None
+
+        for att in attempts:
             try:
-                # Retry without cookies so yt-dlp can use android/ios clients freely
-                clean_opts = yt_service.ydl_opts(use_cookies=False)
-                with yt_dlp.YoutubeDL(clean_opts) as clean_ydl:
-                    info = clean_ydl.extract_info(url, download=False)
-            except Exception as e2:
-                print(f"[stream] Clean fallback extraction failed for {video_id}: {e2}")
-                raise HTTPException(status_code=502, detail=f"yt-dlp extraction error: {e2}")
+                base_opts = yt_service.ydl_opts(use_cookies=att["use_cookies"])
+                if att["proxy"]:
+                    base_opts["proxy"] = att["proxy"]
+                else:
+                    base_opts.pop("proxy", None)
+                with yt_dlp.YoutubeDL(base_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    if info and info.get("url"):
+                        successful_attempt = att
+                        print(f"[stream] Successfully extracted {video_id} via {att['name']}")
+                        break
+            except Exception as ex:
+                last_error = ex
+                print(f"[stream] Extraction attempt '{att['name']}' failed for {video_id}: {ex}")
 
-        target_audio_url = info.get("url") if info else None
-        if not target_audio_url:
-            raise HTTPException(status_code=502, detail="no audio url returned by extractor")
+        if not info or not info.get("url"):
+            raise HTTPException(status_code=502, detail=f"yt-dlp extraction error: {last_error}")
+
+        target_audio_url = info.get("url")
         set_cache(cache_key, target_audio_url, expire_seconds=7200)
-
-    proxies = (
-        {"http": "socks5h://127.0.0.1:1080", "https": "socks5h://127.0.0.1:1080"}
-        if yt_service.is_warp_proxy_available() or os.name != "nt"
-        else None
-    )
+        if successful_attempt and successful_attempt.get("proxy"):
+            used_proxy = {"http": "socks5h://127.0.0.1:1080", "https": "socks5h://127.0.0.1:1080"}
 
     req_headers = {"User-Agent": "Mozilla/5.0"}
     client_range = request.headers.get("Range")
@@ -471,7 +484,7 @@ def stream(video_id: str, request: Request, retry: int = 0, quality: str = "high
             target_audio_url,
             stream=True,
             timeout=30,
-            proxies=proxies,
+            proxies=used_proxy,
             headers=req_headers,
         )
     except Exception as e:
