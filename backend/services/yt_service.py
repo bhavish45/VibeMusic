@@ -164,11 +164,10 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
             "socket_timeout": 10,
             "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
         }
+        opts["extractor_args"] = {"youtube": {"player_client": ["android", "ios", "web"]}}
         cookie_path = get_cookie_file_path()
         if cookie_path:
             opts["cookiefile"] = cookie_path
-        else:
-            opts["extractor_args"] = {"youtube": {"player_client": ["android", "mweb"]}}
 
         try:
             _shared_ydls[clean_q] = yt_dlp.YoutubeDL(opts)
@@ -341,8 +340,9 @@ def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[st
                 "no_warnings": True,
                 "noplaylist": True,
                 "nocheckcertificate": True,
-                "socket_timeout": 12,
+                "socket_timeout": 8,
                 "cookiefile": cookie_path,
+                "extractor_args": {"youtube": {"player_client": ["android", "ios", "mweb"]}},
                 "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
             }
             with yt_dlp.YoutubeDL(cookie_opts) as c_ydl:
