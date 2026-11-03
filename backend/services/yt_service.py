@@ -46,8 +46,80 @@ if not _js_runtime_found:
 from typing import Optional, List, Dict, Any, Tuple
 from services.cache_service import get_cache, set_cache
 
+# ====================== SOCKS5 / WARP & COOKIE HELPERS ======================
+def is_warp_proxy_available() -> bool:
+    import socket
+    try:
+        with socket.create_connection(("127.0.0.1", 1080), timeout=0.25):
+            return True
+    except OSError:
+        return False
+
+def cookie_file() -> Optional[str]:
+    raw = os.environ.get("YOUTUBE_COOKIES", "").strip()
+    if not raw:
+        for local_p in ["/tmp/cookies.txt", "cookies.txt", "backend/cookies.txt"]:
+            if os.path.exists(local_p) and os.path.isfile(local_p) and os.path.getsize(local_p) > 10:
+                return local_p
+        return None
+    path = "/tmp/cookies.txt" if os.name != "nt" else os.path.join(os.getcwd(), "cookies.txt")
+    lines = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("#"):
+            lines.append(line)
+            continue
+        parts = re.split(r'\s+', line)
+        if len(parts) >= 7:
+            lines.append("\t".join(parts[:6] + [" ".join(parts[6:])]))
+        else:
+            lines.append(line)
+    normalized = "\n".join(lines) + "\n"
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(normalized)
+        return path
+    except Exception as e:
+        print(f"[yt-dlp] Warning writing cookie file {path}: {e}")
+        return None
+
+def ydl_opts():
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "force_ipv4": True,
+        "format": "bestaudio[ext=m4a]/bestaudio/best",
+        "js_runtimes": {"deno": {}},
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "web", "mweb", "tv"],
+            }
+        },
+    }
+    if is_warp_proxy_available() or os.name != "nt":
+        opts["proxy"] = "socks5://127.0.0.1:1080"
+    cookies = cookie_file()
+    if cookies:
+        opts["cookiefile"] = cookies
+    return opts
+
+def _init_ytmusic():
+    import requests
+    s = requests.Session()
+    if is_warp_proxy_available() or os.name != "nt":
+        s.proxies = {
+            "http": "socks5h://127.0.0.1:1080",
+            "https": "socks5h://127.0.0.1:1080"
+        }
+    try:
+        return YTMusic(requests_session=s)
+    except Exception:
+        return YTMusic()
+
 # ====================== INIT ======================
-yt = YTMusic()
+yt = _init_ytmusic()
 
 _cookie_file_path: Optional[str] = None
 
@@ -145,47 +217,7 @@ FAST_YDL_OPTS = {
 _shared_ydls: dict[str, yt_dlp.YoutubeDL] = {}
 
 def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
-    global _shared_ydls
-    clean_q = quality if quality in ("high", "standard", "saver") else "high"
-    if clean_q not in _shared_ydls:
-        if clean_q == "saver":
-            target_format = "139/249/250/18/bestaudio[abr<=96]/bestaudio/best"
-        elif clean_q == "standard":
-            target_format = "140/250/18/bestaudio[abr<=160]/bestaudio/best"
-        else:
-            target_format = "140/251/18/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"
-
-        opts: dict[str, Any] = {
-            "format": target_format,
-            "quiet": True,
-            "no_warnings": True,
-            "noplaylist": True,
-            "nocheckcertificate": True,
-            "socket_timeout": 10,
-            "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
-        }
-        opts["extractor_args"] = {"youtube": {"player_client": ["android", "ios", "web"]}}
-        cookie_path = get_cookie_file_path()
-        if cookie_path:
-            opts["cookiefile"] = cookie_path
-
-        try:
-            _shared_ydls[clean_q] = yt_dlp.YoutubeDL(opts)
-        except Exception as e:
-            print(f"[yt-dlp] Warning creating shared ydl ({clean_q}): {e}")
-            fallback_opts: dict[str, Any] = {
-                "format": "18/bestaudio/best",
-                "quiet": True,
-                "no_warnings": True,
-                "noplaylist": True,
-                "nocheckcertificate": True,
-                "socket_timeout": 10,
-                "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
-            }
-            if cookie_path:
-                fallback_opts["cookiefile"] = cookie_path
-            _shared_ydls[clean_q] = yt_dlp.YoutubeDL(fallback_opts)
-    return _shared_ydls[clean_q]
+    return yt_dlp.YoutubeDL(ydl_opts())
 
 # ====================== HELPERS ======================
 
@@ -294,128 +326,26 @@ def _format_track(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[str, Any]]:
     """
-    High-performance, ultra-reliable audio stream extractor with multi-tier failover:
-      Tier 1: Pre-warmed shared instance (uses cookies if available, or fast mobile client)
-      Tier 2: Authenticated extraction with yt-dlp default client chain (tv_embedded, web_creator)
-      Tier 3: Android / MWeb direct client with format 18 (instant edge streaming)
-      Tier 4: Bare unauthenticated format 18
+    One single extraction path through Cloudflare WARP.
     """
     url = f"https://www.youtube.com/watch?v={video_id}"
-    
-    if quality == "saver":
-        target_format = "139/249/250/18/bestaudio[abr<=96]/bestaudio/best"
-        default_bitrate = 96
-    elif quality == "standard":
-        target_format = "140/250/18/bestaudio[abr<=160]/bestaudio/best"
-        default_bitrate = 160
-    else:
-        target_format = "140/251/18/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"
-        default_bitrate = 320
-
-    # 1. Tier 1: Shared pre-warmed instance
-    ydl = get_shared_ydl(quality)
     try:
-        info = ydl.extract_info(url, download=False)
-        if info and info.get("url"):
-            return {
-                "url": info["url"],
-                "bitrate": info.get("abr") or info.get("tbr") or default_bitrate,
-                "ext": info.get("ext", "mp4"),
-                "duration": info.get("duration"),
-                "title": info.get("title"),
-                "quality": quality,
-                "client": "shared_primary",
-                "headers": dict(info.get("http_headers", {}))
-            }
-    except Exception as e:
-        print(f"[yt-dlp] Primary extraction failed for {video_id} ({quality}): {e}")
-
-    # 2. Tier 2: Authenticated extraction with yt-dlp default client chain + Deno/Node
-    cookie_path = get_cookie_file_path()
-    if cookie_path:
-        try:
-            cookie_opts = {
-                "format": target_format,
-                "quiet": True,
-                "no_warnings": True,
-                "noplaylist": True,
-                "nocheckcertificate": True,
-                "socket_timeout": 8,
-                "cookiefile": cookie_path,
-                "extractor_args": {"youtube": {"player_client": ["android", "ios", "mweb"]}},
-                "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
-            }
-            with yt_dlp.YoutubeDL(cookie_opts) as c_ydl:
-                info = c_ydl.extract_info(url, download=False)
-                if info and info.get("url"):
-                    return {
-                        "url": info["url"],
-                        "bitrate": info.get("abr") or info.get("tbr") or default_bitrate,
-                        "ext": info.get("ext", "m4a"),
-                        "duration": info.get("duration"),
-                        "title": info.get("title"),
-                        "quality": quality,
-                        "client": "cookie_default_chain",
-                        "headers": dict(info.get("http_headers", {}))
-                    }
-        except Exception as e:
-            print(f"[yt-dlp] Cookie extraction failed for {video_id}: {e}")
-
-    # 3. Tier 3: Android / MWeb direct client with format 18
-    try:
-        android_opts = {
-            "format": "18/bestaudio/best",
-            "quiet": True,
-            "no_warnings": True,
-            "noplaylist": True,
-            "nocheckcertificate": True,
-            "socket_timeout": 8,
-            "extractor_args": {"youtube": {"player_client": ["android", "mweb"]}},
-            "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
-        }
-        with yt_dlp.YoutubeDL(android_opts) as a_ydl:
-            info = a_ydl.extract_info(url, download=False)
+        with yt_dlp.YoutubeDL(ydl_opts()) as ydl:
+            info = ydl.extract_info(url, download=False)
             if info and info.get("url"):
                 return {
                     "url": info["url"],
-                    "bitrate": info.get("abr") or info.get("tbr") or default_bitrate,
-                    "ext": info.get("ext", "mp4"),
+                    "bitrate": info.get("abr") or info.get("tbr") or 320,
+                    "ext": info.get("ext", "m4a"),
                     "duration": info.get("duration"),
                     "title": info.get("title"),
                     "quality": quality,
-                    "client": "android_mweb_direct",
+                    "client": "warp_socks5",
                     "headers": dict(info.get("http_headers", {}))
                 }
     except Exception as e:
-        print(f"[yt-dlp] Android/MWeb fallback failed for {video_id}: {e}")
-
-    # 4. Tier 4: Bare unauthenticated format 18 (last resort)
-    try:
-        bare_opts = {
-            "format": "18/bestaudio/best",
-            "quiet": True,
-            "no_warnings": True,
-            "noplaylist": True,
-            "nocheckcertificate": True,
-            "socket_timeout": 12,
-            "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
-        }
-        with yt_dlp.YoutubeDL(bare_opts) as bare_ydl:
-            info = bare_ydl.extract_info(url, download=False)
-            if info and info.get("url"):
-                return {
-                    "url": info["url"],
-                    "bitrate": info.get("abr") or info.get("tbr") or default_bitrate,
-                    "ext": info.get("ext", "mp4"),
-                    "duration": info.get("duration"),
-                    "title": info.get("title"),
-                    "quality": quality,
-                    "client": "bare_fallback",
-                    "headers": dict(info.get("http_headers", {}))
-                }
-    except Exception as e:
-        print(f"[yt-dlp] Bare fallback extraction failed for {video_id}: {e}")
-
+        print(f"[yt-dlp] Extraction error for {video_id}: {e}")
+        raise e
     return None
 
 def get_audio_stream_info(video_id: str, quality: str = "high") -> Dict[str, Any]:

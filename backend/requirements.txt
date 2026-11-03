@@ -14,3 +14,5 @@ pyjwt>=2.8.0
 supabase>=2.0.0
 spotapi>=1.2.8
 curl_cffi>=0.7.0
+PySocks>=1.7.1
+requests>=2.31.0

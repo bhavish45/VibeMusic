@@ -1,3 +1,5 @@
+import requests
+import yt_dlp
 from fastapi import APIRouter, HTTPException, Request, Query, Response, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from starlette.concurrency import run_in_threadpool
@@ -408,115 +410,103 @@ async def test_stream(video_id: str):
         return diagnostic
 
 @router.get("/stream/{video_id}")
-async def stream_audio(video_id: str, request: Request, retry: int = 0, quality: str = "high"):
+def stream(video_id: str, request: Request, retry: int = 0, quality: str = "high"):
     """
-    Proxies audio stream with HTTP Range support for instant, zero-delay playback.
-    Singleflight deduplication + connection pooling + automatic 403/410 recovery.
-    Supports bitrate quality selection: high (320k), standard (160k), saver (96k).
+    Direct audio proxy through Cloudflare WARP.
+    Extracts stream with yt-dlp using SOCKS5 proxy, then pipes chunks via requests.
     """
     video_id = validate_safe_id(video_id, "video ID")
     if video_id.startswith("sp_"):
         clean_sp = video_id.replace("sp_", "").strip()
         try:
             from services import spotify_service
-            client = get_stream_client()
             oembed_url = f"https://open.spotify.com/oembed?url=https://open.spotify.com/track/{clean_sp}"
-            oe = await client.get(oembed_url)
+            oe = requests.get(oembed_url, timeout=5)
             if oe.status_code == 200:
                 oe_title = oe.json().get("title", "")
-                resolved = await spotify_service.resolve_spotify_track_to_youtube(oe_title, "")
+                resolved = spotify_service.sync_resolve_spotify_track_to_youtube(oe_title, "")
                 if resolved and resolved.get("videoId"):
                     video_id = resolved["videoId"]
         except Exception as e:
             print(f"[stream] Failed to resolve sp_ id {video_id}: {e}")
 
-    audio_cache_key = f"stream_info:{video_id}:{quality}"
-    cached_info = None if retry > 0 else get_cache(audio_cache_key)
-    
-    if not cached_info:
-        # Use per-video singleflight lock to prevent concurrent duplicate extractions
-        lock = await get_video_lock(f"{video_id}:{quality}")
-        async with lock:
-            cached_info = get_cache(audio_cache_key)
-            if not cached_info or retry > 0:
-                try:
-                    cached_info = await run_in_threadpool(yt_service.get_audio_stream_info, video_id, quality=quality)
-                    if cached_info and cached_info.get("url"):
-                        set_cache(audio_cache_key, cached_info, expire_seconds=14400)
-                except Exception as e:
-                    print(f"Failed to extract audio stream for {video_id} ({quality}): {e}")
-                    raise HTTPException(status_code=500, detail="Could not extract audio stream")
-            
-    if not cached_info or not cached_info.get("url"):
-        raise HTTPException(status_code=404, detail="Audio stream not found")
+    # Use cached audio URL if recent to enable instant range scrubbing
+    cache_key = f"stream_target_url:{video_id}"
+    target_audio_url = None if retry > 0 else get_cache(cache_key)
 
-    target_url = cached_info["url"]
-    headers = dict(cached_info.get("headers", {}))
-    
+    if not target_audio_url:
+        url = f"https://www.youtube.com/watch?v={video_id}"
+        try:
+            with yt_dlp.YoutubeDL(yt_service.ydl_opts()) as ydl:
+                info = ydl.extract_info(url, download=False)
+        except Exception as e:
+            print(f"[stream] yt-dlp extraction failed for {video_id}: {e}")
+            raise HTTPException(status_code=502, detail=f"yt-dlp extraction error: {e}")
+
+        target_audio_url = info.get("url") if info else None
+        if not target_audio_url:
+            raise HTTPException(status_code=502, detail="no audio url returned by extractor")
+        set_cache(cache_key, target_audio_url, expire_seconds=7200)
+
+    proxies = (
+        {"http": "socks5h://127.0.0.1:1080", "https": "socks5h://127.0.0.1:1080"}
+        if yt_service.is_warp_proxy_available() or os.name != "nt"
+        else None
+    )
+
+    req_headers = {"User-Agent": "Mozilla/5.0"}
     client_range = request.headers.get("Range")
     if client_range:
-        headers["Range"] = client_range
-    else:
-        headers["Range"] = "bytes=0-"
+        req_headers["Range"] = client_range
 
-    headers.setdefault("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-    headers.setdefault("Accept", "*/*")
-    headers.setdefault("Accept-Language", "en-US,en;q=0.9")
-
-    client = get_stream_client()
     try:
-        remote_req = client.build_request("GET", target_url, headers=headers)
-        remote_res = await client.send(remote_req, stream=True)
-        
-        # If upstream gave 403 (token edge delay or expired) or 410, retry or refresh
-        if remote_res.status_code == 403:
-            await remote_res.aclose()
-            print(f"[stream] Upstream returned 403 for {video_id}. Awaiting Google CDN activation (3.8s)...")
-            await asyncio.sleep(3.8)
-            remote_req = client.build_request("GET", target_url, headers=headers)
-            remote_res = await client.send(remote_req, stream=True)
-
-        if remote_res.status_code in (403, 410):
-            await remote_res.aclose()
-            print(f"[stream] Upstream still {remote_res.status_code} for {video_id}. Re-extracting fresh audio stream...")
-            invalidate_cache(audio_cache_key)
-            fresh_info = await run_in_threadpool(yt_service.get_audio_stream_info, video_id, quality=quality)
-            if fresh_info and fresh_info.get("url"):
-                set_cache(audio_cache_key, fresh_info, expire_seconds=14400)
-                target_url = fresh_info["url"]
-                headers = dict(fresh_info.get("headers", {}))
-                headers["Range"] = client_range or "bytes=0-"
-                remote_req = client.build_request("GET", target_url, headers=headers)
-                remote_res = await client.send(remote_req, stream=True)
-
+        upstream = requests.get(
+            target_audio_url,
+            stream=True,
+            timeout=30,
+            proxies=proxies,
+            headers=req_headers,
+        )
     except Exception as e:
-        print(f"Error connecting to stream target for {video_id}: {e}")
-        raise HTTPException(status_code=502, detail="Failed to connect to upstream audio stream")
+        print(f"[stream] Upstream connection error for {video_id}: {e}")
+        invalidate_cache(cache_key)
+        raise HTTPException(status_code=502, detail=f"failed to connect to upstream audio: {e}")
 
-    async def stream_generator():
+    # If expired URL (403/410), invalidate and retry once
+    if upstream.status_code in (403, 410) and retry == 0:
+        upstream.close()
+        invalidate_cache(cache_key)
+        return stream(video_id=video_id, request=request, retry=1, quality=quality)
+
+    if upstream.status_code not in (200, 206):
+        upstream.close()
+        invalidate_cache(cache_key)
+        raise HTTPException(status_code=502, detail=f"upstream status {upstream.status_code}")
+
+    def chunks():
         try:
-            async for chunk in remote_res.aiter_bytes(chunk_size=65536):
-                yield chunk
+            for chunk in upstream.iter_content(64 * 1024):
+                if chunk:
+                    yield chunk
         finally:
-            await remote_res.aclose()
+            upstream.close()
 
     resp_headers = {
         "Accept-Ranges": "bytes",
-        "Content-Type": "audio/mp4" if remote_res.headers.get("Content-Type") in ("video/mp4", "application/octet-stream") else remote_res.headers.get("Content-Type", "audio/mp4"),
-        "Cache-Control": "public, max-age=86400",
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Headers": "*",
         "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
     }
-    if "Content-Range" in remote_res.headers:
-        resp_headers["Content-Range"] = remote_res.headers["Content-Range"]
-    if "Content-Length" in remote_res.headers:
-        resp_headers["Content-Length"] = remote_res.headers["Content-Length"]
+    if "Content-Range" in upstream.headers:
+        resp_headers["Content-Range"] = upstream.headers["Content-Range"]
+    if "Content-Length" in upstream.headers:
+        resp_headers["Content-Length"] = upstream.headers["Content-Length"]
 
     return StreamingResponse(
-        stream_generator(),
-        status_code=remote_res.status_code,
-        headers=resp_headers
+        chunks(),
+        status_code=upstream.status_code,
+        media_type=upstream.headers.get("Content-Type", "audio/mp4"),
+        headers=resp_headers,
     )
 
 

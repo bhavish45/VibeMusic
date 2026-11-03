@@ -31,18 +31,7 @@ async def lifespan(app: FastAPI):
                     set_cache(cache_key, data, expire_seconds=3600)
                     print("[Startup] Home feed cached successfully.")
             
-            # Pre-warm stream cache for top trending tracks
-            if data:
-                top_tracks = (data.get("trending") or data.get("tracks") or [])[:5]
-                for t in top_tracks:
-                    vid = t.get("videoId")
-                    if vid:
-                        s_key = f"stream_info:{vid}:high"
-                        if not get_cache(s_key):
-                            info = await run_in_threadpool(yt_service.get_audio_stream_info, vid)
-                            if info and info.get("url"):
-                                set_cache(s_key, info, expire_seconds=14400)
-                print("[Startup] Top audio streams pre-warmed.")
+            # Startup warm complete (stream pre-warming disabled per deployment specifications)
         except Exception as e:
             print(f"[Startup] Note: {e}")
 
