@@ -5,6 +5,17 @@ import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
+# Auto-discover Deno binary from Python package if available
+try:
+    from deno._find_deno import find_deno_bin
+    _deno_bin = find_deno_bin()
+    if _deno_bin and os.path.exists(_deno_bin):
+        _deno_dir = os.path.dirname(_deno_bin)
+        if _deno_dir not in os.environ.get("PATH", ""):
+            os.environ["PATH"] = _deno_dir + os.pathsep + os.environ.get("PATH", "")
+            print(f"[yt-dlp] Deno runtime enabled at {_deno_bin}")
+except Exception as _de:
+    pass
 from typing import Optional, List, Dict, Any, Tuple
 from services.cache_service import get_cache, set_cache
 
@@ -66,7 +77,8 @@ FAST_YDL_OPTS = {
     "no_warnings": True,
     "noplaylist": True,
     "nocheckcertificate": True,
-    "socket_timeout": 8,
+    "socket_timeout": 10,
+    "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
 }
 
 _shared_ydls: dict[str, yt_dlp.YoutubeDL] = {}
@@ -88,13 +100,12 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
             "no_warnings": True,
             "noplaylist": True,
             "nocheckcertificate": True,
-            "socket_timeout": 8,
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android_vr", "web"]
-                }
-            }
+            "socket_timeout": 10,
+            "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
         }
+        cookie_path = get_cookie_file_path()
+        if cookie_path:
+            opts["cookiefile"] = cookie_path
         try:
             _shared_ydls[clean_q] = yt_dlp.YoutubeDL(opts)
         except Exception as e:
@@ -105,8 +116,11 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
                 "no_warnings": True,
                 "noplaylist": True,
                 "nocheckcertificate": True,
-                "socket_timeout": 8,
+                "socket_timeout": 10,
+                "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
             }
+            if cookie_path:
+                fallback_opts["cookiefile"] = cookie_path
             _shared_ydls[clean_q] = yt_dlp.YoutubeDL(fallback_opts)
     return _shared_ydls[clean_q]
 
@@ -253,7 +267,7 @@ def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[st
     except Exception as e:
         print(f"[yt-dlp] Primary extraction failed for {video_id} ({quality}): {e}")
 
-    # Fallback 1: Clean unauthenticated extraction without cookies (bypasses bad/expired cookie sessions)
+    # Fallback 1: Unauthenticated extraction with Deno/Node JS solver
     try:
         no_cookie_opts = {
             "format": target_format,
@@ -261,12 +275,8 @@ def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[st
             "no_warnings": True,
             "noplaylist": True,
             "nocheckcertificate": True,
-            "socket_timeout": 8,
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android_vr", "web"]
-                }
-            }
+            "socket_timeout": 10,
+            "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
         }
         with yt_dlp.YoutubeDL(no_cookie_opts) as clean_ydl:
             info = clean_ydl.extract_info(url, download=False)
@@ -284,7 +294,7 @@ def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[st
     except Exception as e:
         print(f"[yt-dlp] Unauthenticated fallback extraction failed for {video_id}: {e}")
 
-    # Fallback 2: Direct fallback with cookies if available
+    # Fallback 2: Direct fallback with cookies and JS runtime
     try:
         opts = {
             "format": target_format,
@@ -292,7 +302,8 @@ def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[st
             "no_warnings": True,
             "noplaylist": True,
             "nocheckcertificate": True,
-            "socket_timeout": 8,
+            "socket_timeout": 10,
+            "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
         }
         cookie_path = get_cookie_file_path()
         if cookie_path:
