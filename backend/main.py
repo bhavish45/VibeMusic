@@ -179,20 +179,57 @@ async def root():
 @app.get("/api/version")
 async def get_version():
     import shutil
+    import subprocess
     from services.yt_service import get_cookie_file_path
+    
     cp = get_cookie_file_path()
     c_count = 0
     if cp and os.path.exists(cp):
         with open(cp, "r", encoding="utf-8", errors="ignore") as f:
             c_count = len([l for l in f if l.strip() and not l.startswith("#")])
+    
+    deno_path = shutil.which("deno")
+    deno_ver = "unknown"
+    if deno_path:
+        try:
+            res = subprocess.run([deno_path, "--version"], capture_output=True, text=True, timeout=3)
+            deno_ver = res.stdout.strip()
+        except Exception as e:
+            deno_ver = f"error: {e}"
+
+    node_path = shutil.which("node")
+    node_ver = "unknown"
+    if node_path:
+        try:
+            res = subprocess.run([node_path, "--version"], capture_output=True, text=True, timeout=3)
+            node_ver = res.stdout.strip()
+        except Exception as e:
+            node_ver = f"error: {e}"
+
+    # Test quick extraction of a single track with yt-dlp to inspect exact Render error
+    test_err = None
+    test_fmt = None
+    try:
+        from services import yt_service
+        info = yt_service.get_best_audio_url("RcSX0hOWcQ0", quality="standard")
+        if info:
+            test_fmt = {
+                "client": info.get("client"),
+                "format": info.get("ext"),
+                "url_prefix": info.get("url", "")[:60]
+            }
+    except Exception as e:
+        test_err = str(e)
+
     return {
-        "version": "1.0.5",
-        "commit": "21f9e52",
+        "version": "1.0.6",
         "cookies_loaded": c_count,
         "cookie_file": cp,
-        "deno_bin": shutil.which("deno"),
-        "node_bin": shutil.which("node"),
-        "path_has_deno": "deno" in os.environ.get("PATH", "").lower()
+        "deno_version": deno_ver,
+        "node_version": node_ver,
+        "path": os.environ.get("PATH", "")[:200],
+        "test_extraction": test_fmt,
+        "test_error": test_err
     }
 
 @app.get("/api/health")
