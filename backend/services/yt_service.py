@@ -85,7 +85,7 @@ def cookie_file() -> Optional[str]:
         print(f"[yt-dlp] Warning writing cookie file {path}: {e}")
         return None
 
-def ydl_opts():
+def ydl_opts(use_cookies: bool = True):
     opts = {
         "quiet": True,
         "no_warnings": True,
@@ -94,15 +94,16 @@ def ydl_opts():
         "js_runtimes": {"deno": {}},
         "extractor_args": {
             "youtube": {
-                "player_client": ["android", "web", "mweb", "tv"],
+                "player_client": ["android", "ios", "web", "mweb", "tv"],
             }
         },
     }
     if is_warp_proxy_available() or os.name != "nt":
         opts["proxy"] = "socks5://127.0.0.1:1080"
-    cookies = cookie_file()
-    if cookies:
-        opts["cookiefile"] = cookies
+    if use_cookies:
+        cookies = cookie_file()
+        if cookies:
+            opts["cookiefile"] = cookies
     return opts
 
 def _init_ytmusic():

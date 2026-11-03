@@ -440,8 +440,15 @@ def stream(video_id: str, request: Request, retry: int = 0, quality: str = "high
             with yt_dlp.YoutubeDL(yt_service.ydl_opts()) as ydl:
                 info = ydl.extract_info(url, download=False)
         except Exception as e:
-            print(f"[stream] yt-dlp extraction failed for {video_id}: {e}")
-            raise HTTPException(status_code=502, detail=f"yt-dlp extraction error: {e}")
+            print(f"[stream] Primary extraction failed for {video_id}: {e}. Retrying with clean unauthenticated client...")
+            try:
+                # Retry without cookies so yt-dlp can use android/ios clients freely
+                clean_opts = yt_service.ydl_opts(use_cookies=False)
+                with yt_dlp.YoutubeDL(clean_opts) as clean_ydl:
+                    info = clean_ydl.extract_info(url, download=False)
+            except Exception as e2:
+                print(f"[stream] Clean fallback extraction failed for {video_id}: {e2}")
+                raise HTTPException(status_code=502, detail=f"yt-dlp extraction error: {e2}")
 
         target_audio_url = info.get("url") if info else None
         if not target_audio_url:
