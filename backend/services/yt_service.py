@@ -72,12 +72,13 @@ def get_cookie_file_path() -> Optional[str]:
 
 # Optimized, high-performance yt-dlp configuration
 FAST_YDL_OPTS = {
-    "format": "bestaudio/best",
+    "format": "140/251/18/bestaudio/best",
     "quiet": True,
     "no_warnings": True,
     "noplaylist": True,
     "nocheckcertificate": True,
-    "socket_timeout": 10,
+    "socket_timeout": 8,
+    "extractor_args": {"youtube": {"player_client": ["android", "mweb"]}},
     "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
 }
 
@@ -88,11 +89,11 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
     clean_q = quality if quality in ("high", "standard", "saver") else "high"
     if clean_q not in _shared_ydls:
         if clean_q == "saver":
-            target_format = "139/249/250/bestaudio[abr<=96]/bestaudio/best"
+            target_format = "139/249/250/18/bestaudio[abr<=96]/bestaudio/best"
         elif clean_q == "standard":
-            target_format = "140/250/bestaudio[abr<=160]/bestaudio/best"
+            target_format = "140/250/18/bestaudio[abr<=160]/bestaudio/best"
         else:
-            target_format = "bestaudio/best"
+            target_format = "140/251/18/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"
 
         opts: dict[str, Any] = {
             "format": target_format,
@@ -100,27 +101,24 @@ def get_shared_ydl(quality: str = "high") -> yt_dlp.YoutubeDL:
             "no_warnings": True,
             "noplaylist": True,
             "nocheckcertificate": True,
-            "socket_timeout": 10,
+            "socket_timeout": 8,
+            "extractor_args": {"youtube": {"player_client": ["android", "mweb"]}},
             "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
         }
-        cookie_path = get_cookie_file_path()
-        if cookie_path:
-            opts["cookiefile"] = cookie_path
         try:
             _shared_ydls[clean_q] = yt_dlp.YoutubeDL(opts)
         except Exception as e:
             print(f"[yt-dlp] Warning creating shared ydl ({clean_q}): {e}")
             fallback_opts: dict[str, Any] = {
-                "format": "bestaudio/best",
+                "format": "18/bestaudio/best",
                 "quiet": True,
                 "no_warnings": True,
                 "noplaylist": True,
                 "nocheckcertificate": True,
-                "socket_timeout": 10,
+                "socket_timeout": 8,
+                "extractor_args": {"youtube": {"player_client": ["android", "mweb"]}},
                 "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
             }
-            if cookie_path:
-                fallback_opts["cookiefile"] = cookie_path
             _shared_ydls[clean_q] = yt_dlp.YoutubeDL(fallback_opts)
     return _shared_ydls[clean_q]
 
@@ -232,84 +230,84 @@ def _format_track(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[str, Any]]:
     """
     High-performance, ultra-reliable audio stream extractor with bitrate/quality selection.
-    Uses shared YoutubeDL instance with tv_embedded & android clients.
+    Uses shared YoutubeDL instance with android & mweb clients (instant activation, zero bot blocks).
     Supports 'high' (best/320kbps), 'standard' (160kbps), and 'saver' (96kbps).
     """
     url = f"https://www.youtube.com/watch?v={video_id}"
     
     # Custom format selector per quality
     if quality == "saver":
-        target_format = "139/249/250/bestaudio[abr<=96]/bestaudio/best"
+        target_format = "139/249/250/18/bestaudio[abr<=96]/bestaudio/best"
         default_bitrate = 96
     elif quality == "standard":
-        target_format = "140/250/bestaudio[abr<=160]/bestaudio/best"
+        target_format = "140/250/18/bestaudio[abr<=160]/bestaudio/best"
         default_bitrate = 160
     else:
-        target_format = "140/251/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"
+        target_format = "140/251/18/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"
         default_bitrate = 320
 
-    # Fast primary extraction using shared pre-warmed instance
+    # 1. Ultra-fast primary extraction using pre-warmed shared instance (android + mweb)
     ydl = get_shared_ydl(quality)
-
     try:
         info = ydl.extract_info(url, download=False)
         if info and info.get("url"):
             return {
                 "url": info["url"],
                 "bitrate": info.get("abr") or info.get("tbr") or default_bitrate,
-                "ext": info.get("ext", "m4a"),
+                "ext": info.get("ext", "mp4"),
                 "duration": info.get("duration"),
                 "title": info.get("title"),
                 "quality": quality,
-                "client": "default",
+                "client": "android_mweb",
                 "headers": dict(info.get("http_headers", {}))
             }
     except Exception as e:
         print(f"[yt-dlp] Primary extraction failed for {video_id} ({quality}): {e}")
 
-    # Fallback 1: Unauthenticated extraction with Deno/Node JS solver
+    # 2. Fallback 1: Pure Android client with format 18 (guaranteed instant edge stream)
     try:
-        no_cookie_opts = {
-            "format": target_format,
+        android_opts = {
+            "format": "18/bestaudio/best",
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
             "nocheckcertificate": True,
-            "socket_timeout": 10,
-            "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
+            "socket_timeout": 8,
+            "extractor_args": {"youtube": {"player_client": ["android"]}},
         }
-        with yt_dlp.YoutubeDL(no_cookie_opts) as clean_ydl:
-            info = clean_ydl.extract_info(url, download=False)
+        with yt_dlp.YoutubeDL(android_opts) as a_ydl:
+            info = a_ydl.extract_info(url, download=False)
             if info and info.get("url"):
                 return {
                     "url": info["url"],
                     "bitrate": info.get("abr") or info.get("tbr") or default_bitrate,
-                    "ext": info.get("ext", "m4a"),
+                    "ext": info.get("ext", "mp4"),
                     "duration": info.get("duration"),
                     "title": info.get("title"),
                     "quality": quality,
-                    "client": "unauth_fallback",
+                    "client": "android_direct",
                     "headers": dict(info.get("http_headers", {}))
                 }
     except Exception as e:
-        print(f"[yt-dlp] Unauthenticated fallback extraction failed for {video_id}: {e}")
+        print(f"[yt-dlp] Android fallback extraction failed for {video_id}: {e}")
 
-    # Fallback 2: Direct fallback with cookies and JS runtime
+    # 3. Fallback 2: Direct authenticated extraction with cookies and Deno JS runtime
     try:
-        opts = {
+        cookie_opts = {
             "format": target_format,
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
             "nocheckcertificate": True,
             "socket_timeout": 10,
+            "extractor_args": {"youtube": {"player_client": ["mweb", "web"]}},
             "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
         }
         cookie_path = get_cookie_file_path()
         if cookie_path:
-            opts["cookiefile"] = cookie_path
-        with yt_dlp.YoutubeDL(opts) as fallback_ydl:
-            info = fallback_ydl.extract_info(url, download=False)
+            cookie_opts["cookiefile"] = cookie_path
+        with yt_dlp.YoutubeDL(cookie_opts) as c_ydl:
+            info = c_ydl.extract_info(url, download=False)
             if info and info.get("url"):
                 return {
                     "url": info["url"],
@@ -325,7 +323,6 @@ def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[st
         print(f"[yt-dlp] Cookie fallback extraction failed for {video_id}: {e}")
 
     return None
-
 
 def get_audio_stream_info(video_id: str, quality: str = "high") -> Dict[str, Any]:
     """

@@ -468,12 +468,18 @@ async def stream_audio(video_id: str, request: Request, retry: int = 0, quality:
         remote_req = client.build_request("GET", target_url, headers=headers)
         remote_res = await client.send(remote_req, stream=True)
         
-        # If upstream gave 403 or 410 (expired Google CDN token), refresh extraction once
+        # If upstream gave 403 (token edge delay or expired) or 410, retry or refresh
+        if remote_res.status_code == 403:
+            await remote_res.aclose()
+            print(f"[stream] Upstream returned 403 for {video_id}. Awaiting Google CDN activation (3.8s)...")
+            await asyncio.sleep(3.8)
+            remote_req = client.build_request("GET", target_url, headers=headers)
+            remote_res = await client.send(remote_req, stream=True)
+
         if remote_res.status_code in (403, 410):
             await remote_res.aclose()
-            print(f"Upstream returned {remote_res.status_code} for {video_id}. Re-extracting fresh audio stream...")
+            print(f"[stream] Upstream still {remote_res.status_code} for {video_id}. Re-extracting fresh audio stream...")
             invalidate_cache(audio_cache_key)
-            
             fresh_info = await run_in_threadpool(yt_service.get_audio_stream_info, video_id, quality=quality)
             if fresh_info and fresh_info.get("url"):
                 set_cache(audio_cache_key, fresh_info, expire_seconds=14400)
@@ -496,7 +502,7 @@ async def stream_audio(video_id: str, request: Request, retry: int = 0, quality:
 
     resp_headers = {
         "Accept-Ranges": "bytes",
-        "Content-Type": remote_res.headers.get("Content-Type", "audio/mp4"),
+        "Content-Type": "audio/mp4" if remote_res.headers.get("Content-Type") in ("video/mp4", "application/octet-stream") else remote_res.headers.get("Content-Type", "audio/mp4"),
         "Cache-Control": "public, max-age=86400",
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Headers": "*",

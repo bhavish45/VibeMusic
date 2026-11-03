@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
                 for t in top_tracks:
                     vid = t.get("videoId")
                     if vid:
-                        s_key = f"stream_info:{vid}"
+                        s_key = f"stream_info:{vid}:high"
                         if not get_cache(s_key):
                             info = await run_in_threadpool(yt_service.get_audio_stream_info, vid)
                             if info and info.get("url"):
