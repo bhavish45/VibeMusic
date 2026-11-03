@@ -291,7 +291,9 @@ def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[st
     except Exception as e:
         print(f"[yt-dlp] Android fallback extraction failed for {video_id}: {e}")
 
-    # 3. Fallback 2: Direct authenticated extraction with cookies and Deno JS runtime
+    # 3. Fallback 2: Authenticated extraction with cookies + Deno JS runtime (default client)
+    #    Critical path for datacenter IPs (Render, Railway) where android/mweb are blocked.
+    #    Uses yt-dlp default client chain (tv_embedded + web_creator) for best compatibility.
     try:
         cookie_opts = {
             "format": target_format,
@@ -299,8 +301,7 @@ def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[st
             "no_warnings": True,
             "noplaylist": True,
             "nocheckcertificate": True,
-            "socket_timeout": 10,
-            "extractor_args": {"youtube": {"player_client": ["mweb", "web"]}},
+            "socket_timeout": 15,
             "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
         }
         cookie_path = get_cookie_file_path()
@@ -316,11 +317,38 @@ def get_best_audio_url(video_id: str, quality: str = "high") -> Optional[Dict[st
                     "duration": info.get("duration"),
                     "title": info.get("title"),
                     "quality": quality,
-                    "client": "cookie_fallback",
+                    "client": "default_cookie",
                     "headers": dict(info.get("http_headers", {}))
                 }
     except Exception as e:
-        print(f"[yt-dlp] Cookie fallback extraction failed for {video_id}: {e}")
+        print(f"[yt-dlp] Default+cookie fallback failed for {video_id}: {e}")
+
+    # 4. Fallback 3: Unauthenticated with default client (last resort)
+    try:
+        bare_opts = {
+            "format": "18/bestaudio/best",
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "nocheckcertificate": True,
+            "socket_timeout": 15,
+            "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
+        }
+        with yt_dlp.YoutubeDL(bare_opts) as bare_ydl:
+            info = bare_ydl.extract_info(url, download=False)
+            if info and info.get("url"):
+                return {
+                    "url": info["url"],
+                    "bitrate": info.get("abr") or info.get("tbr") or default_bitrate,
+                    "ext": info.get("ext", "mp4"),
+                    "duration": info.get("duration"),
+                    "title": info.get("title"),
+                    "quality": quality,
+                    "client": "bare_fallback",
+                    "headers": dict(info.get("http_headers", {}))
+                }
+    except Exception as e:
+        print(f"[yt-dlp] Bare fallback extraction failed for {video_id}: {e}")
 
     return None
 
