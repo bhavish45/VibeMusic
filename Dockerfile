@@ -27,3 +27,4 @@ RUN chmod +x /app/start.sh
 
 ENV PATH="/usr/local/bin:${PATH}"
 CMD ["/app/start.sh"]
+

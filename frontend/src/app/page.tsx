@@ -553,10 +553,13 @@ function isPopularOriginalTrack(track: Track): boolean {
         // Exclude recent played tracks so it's genuine discoveries!
         const cleanDiscoveries = cached.filter(t => !playedVideoIds.has(t.videoId) && isPopularOriginalTrack(t));
         const finalTracks = cleanDiscoveries.length >= 6 ? cleanDiscoveries : cached.filter(isPopularOriginalTrack);
+        const paddedTracks = finalTracks.length >= 6
+          ? finalTracks
+          : [...finalTracks, ...FALLBACK_QUICK_PICKS.filter(fb => !finalTracks.some(ft => ft.videoId === fb.videoId))];
         setRecommendedSection({
           title: "Made For You",
           subtitle: topArtist ? `BASED ON YOUR LOVE FOR ${topArtist.toUpperCase()}` : "RECOMMENDED FOR YOUR TASTE",
-          tracks: finalTracks.slice(0, 16)
+          tracks: paddedTracks.slice(0, 16)
         });
         return;
       }
@@ -572,17 +575,32 @@ function isPopularOriginalTrack(track: Track): boolean {
             // Strictly exclude tracks the user has already played (never add recent played songs one after another!)
             const cleanDiscoveries = tracks.filter((t: Track) => !playedVideoIds.has(t.videoId) && isPopularOriginalTrack(t));
             const tracksToShow = cleanDiscoveries.length >= 6 ? cleanDiscoveries : tracks.filter(isPopularOriginalTrack);
-            if (tracksToShow.length > 0) {
-              setClientCache(cacheKey, tracksToShow, 3600);
+            const paddedTracks = tracksToShow.length >= 6
+              ? tracksToShow
+              : [...tracksToShow, ...FALLBACK_QUICK_PICKS.filter(fb => !tracksToShow.some(ft => ft.videoId === fb.videoId))];
+            if (paddedTracks.length > 0) {
+              setClientCache(cacheKey, paddedTracks, 3600);
               setRecommendedSection({
                 title: "Made For You",
                 subtitle: topArtist ? `BASED ON YOUR LOVE FOR ${topArtist.toUpperCase()}` : "RECOMMENDED FOR YOUR TASTE",
-                tracks: tracksToShow.slice(0, 16)
+                tracks: paddedTracks.slice(0, 16)
               });
             }
+          } else {
+            setRecommendedSection({
+              title: "Made For You",
+              subtitle: topArtist ? `BASED ON YOUR LOVE FOR ${topArtist.toUpperCase()}` : "RECOMMENDED FOR YOUR TASTE",
+              tracks: FALLBACK_QUICK_PICKS
+            });
           }
         })
-        .catch(() => {});
+        .catch(() => {
+          setRecommendedSection({
+            title: "Made For You",
+            subtitle: "RECOMMENDED FOR YOUR TASTE",
+            tracks: FALLBACK_QUICK_PICKS
+          });
+        });
     } else {
       // Default curated starter for fresh users without prior listening history
       setRecommendedSection({

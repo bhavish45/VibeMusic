@@ -32,9 +32,5 @@ while [ "$i" -lt 20 ]; do
   sleep 1
 done
 
-export HTTP_PROXY="socks5h://127.0.0.1:1080"
-export HTTPS_PROXY="socks5h://127.0.0.1:1080"
-export ALL_PROXY="socks5h://127.0.0.1:1080"
-
 cd /app
 exec uvicorn main:app --host 0.0.0.0 --port "${PORT:-10000}"

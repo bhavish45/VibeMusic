@@ -107,17 +107,21 @@ def ydl_opts(use_cookies: bool = True):
     return opts
 
 def _init_ytmusic():
-    import requests
-    s = requests.Session()
-    if is_warp_proxy_available() or os.name != "nt":
-        s.proxies = {
-            "http": "socks5h://127.0.0.1:1080",
-            "https": "socks5h://127.0.0.1:1080"
-        }
     try:
-        return YTMusic(requests_session=s)
-    except Exception:
         return YTMusic()
+    except Exception as e:
+        print(f"[ytmusic] Default direct init exception: {e}")
+        try:
+            import requests
+            s = requests.Session()
+            if is_warp_proxy_available():
+                s.proxies = {
+                    "http": "socks5h://127.0.0.1:1080",
+                    "https": "socks5h://127.0.0.1:1080"
+                }
+            return YTMusic(requests_session=s)
+        except Exception:
+            return YTMusic()
 
 # ====================== INIT ======================
 yt = _init_ytmusic()
@@ -491,12 +495,18 @@ def _format_playlist(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 def search(query: str, filter_type: str = "songs") -> List[Dict[str, Any]]:
-    """Search YTMusic for songs, videos, albums, or artists."""
+    """Search YTMusic for songs, videos, albums, or artists with resilient fallback."""
+    results = []
     try:
         results = yt.search(query, filter=filter_type)
     except Exception as e:
-        print(f"Search error for query '{query}': {e}")
-        return []
+        print(f"[search] Primary search failed for '{query}': {e}. Retrying with fresh client...")
+        try:
+            fresh_yt = YTMusic()
+            results = fresh_yt.search(query, filter=filter_type)
+        except Exception as e2:
+            print(f"[search] Fallback search also failed for '{query}': {e2}")
+            return []
     
     formatted = []
     for item in results:
