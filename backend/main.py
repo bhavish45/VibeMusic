@@ -176,6 +176,25 @@ app.include_router(routes.router, prefix="/api")
 async def root():
     return {"message": "VibeMusic API is running", "status": "healthy"}
 
+@app.get("/api/version")
+async def get_version():
+    import shutil
+    from services.yt_service import get_cookie_file_path
+    cp = get_cookie_file_path()
+    c_count = 0
+    if cp and os.path.exists(cp):
+        with open(cp, "r", encoding="utf-8", errors="ignore") as f:
+            c_count = len([l for l in f if l.strip() and not l.startswith("#")])
+    return {
+        "version": "1.0.5",
+        "commit": "21f9e52",
+        "cookies_loaded": c_count,
+        "cookie_file": cp,
+        "deno_bin": shutil.which("deno"),
+        "node_bin": shutil.which("node"),
+        "path_has_deno": "deno" in os.environ.get("PATH", "").lower()
+    }
+
 @app.get("/api/health")
 async def health_check():
     return {
