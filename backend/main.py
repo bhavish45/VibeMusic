@@ -206,30 +206,12 @@ async def get_version():
         except Exception as e:
             node_ver = f"error: {e}"
 
-    # Test quick extraction of a single track with yt-dlp to inspect exact Render error
-    test_err = None
-    test_fmt = None
-    try:
-        from services import yt_service
-        info = yt_service.get_best_audio_url("RcSX0hOWcQ0", quality="standard")
-        if info:
-            test_fmt = {
-                "client": info.get("client"),
-                "format": info.get("ext"),
-                "url_prefix": info.get("url", "")[:60]
-            }
-    except Exception as e:
-        test_err = str(e)
-
     return {
         "version": "1.0.6",
+        "status": "healthy",
         "cookies_loaded": c_count,
-        "cookie_file": cp,
-        "deno_version": deno_ver,
+        "deno_version": deno_ver.split("\n")[0] if deno_ver else "none",
         "node_version": node_ver,
-        "path": os.environ.get("PATH", "")[:200],
-        "test_extraction": test_fmt,
-        "test_error": test_err
     }
 
 @app.get("/api/health")
